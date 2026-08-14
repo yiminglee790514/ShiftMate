@@ -1,0 +1,30 @@
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100%;
+  font-family:
+    Inter,
+    "Noto Sans TC",
+    "Microsoft JhengHei",
+    Arial,
+    sans-serif;
+}
+
+html {
+  background: #f5f8fc;
+}
+
+body {
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}

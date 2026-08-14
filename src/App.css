@@ -1,0 +1,741 @@
+* {
+  box-sizing: border-box;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+.app {
+  min-height: 100vh;
+  background: #f5f8fc;
+  color: #102a56;
+}
+
+/* Header */
+.top-header {
+  width: calc(100% - 32px);
+  max-width: 1180px;
+  margin: 16px auto;
+  min-height: 112px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 34px;
+  box-shadow: 0 5px 20px rgba(20, 50, 90, 0.08);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.brand-icon {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #102a56;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  font-weight: 900;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 38px;
+  letter-spacing: 1px;
+}
+
+.brand p {
+  margin: 2px 0 0;
+  font-size: 18px;
+  color: #60708c;
+}
+
+.login-button {
+  min-width: 130px;
+  height: 58px;
+  border: 1.5px solid #4389ef;
+  border-radius: 12px;
+  background: #fff;
+  color: #1664d8;
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Main */
+.main-container {
+  width: calc(100% - 32px);
+  max-width: 1180px;
+  margin: 0 auto 40px;
+}
+
+.user-card {
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 18px;
+  padding: 22px 28px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  box-shadow: 0 5px 20px rgba(20, 50, 90, 0.06);
+}
+
+.user-info {
+  min-height: 75px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-right: 1px solid #e0e6ef;
+  padding-left: 22px;
+}
+
+.user-info:last-child {
+  border-right: none;
+}
+
+.info-title {
+  font-size: 17px;
+  color: #66738b;
+  margin-bottom: 5px;
+}
+
+.user-info strong {
+  font-size: 27px;
+}
+
+/* Calendar */
+.calendar-card {
+  margin-top: 18px;
+  background: #fff;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 6px 24px rgba(20, 50, 90, 0.08);
+}
+
+.controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.controls select {
+  width: 220px;
+  height: 56px;
+  border: 1px solid #cbd6e5;
+  border-radius: 12px;
+  background: white;
+  color: #102a56;
+  padding: 0 18px;
+  font-size: 20px;
+}
+
+.today-button,
+.leave-month-button {
+  height: 56px;
+  border: none;
+  border-radius: 12px;
+  padding: 0 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.today-button {
+  background: #eaf3ff;
+  color: #1664d8;
+}
+
+.leave-month-button {
+  background: #fff1f3;
+  color: #d93131;
+}
+
+.month-navigation {
+  display: grid;
+  grid-template-columns: 70px 1fr 70px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.month-arrow {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid #d4dce7;
+  background: white;
+  color: #102a56;
+  font-size: 45px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.month-arrow:hover {
+  background: #f0f6ff;
+}
+
+.month-title {
+  text-align: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  font-size: 34px;
+}
+
+.month-title strong {
+  font-size: 25px;
+  color: #587093;
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #dce2eb;
+}
+
+.weekdays div {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  color: #102a56;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-left: 1px solid #dce2eb;
+  border-top: 1px solid #dce2eb;
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+}
+
+.calendar-cell {
+  position: relative;
+  min-height: 125px;
+  border: none;
+  border-right: 1px solid #dce2eb;
+  border-bottom: 1px solid #dce2eb;
+  background: #fff;
+  text-align: left;
+  padding: 13px;
+  cursor: pointer;
+  color: #102a56;
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.calendar-cell:not(.outside-month):hover {
+  z-index: 2;
+  box-shadow: inset 0 0 0 2px #8db9f5;
+}
+
+.calendar-cell.outside-month {
+  color: #b6bdc8;
+  background: #fafbfc;
+  cursor: default;
+}
+
+.date-number {
+  position: absolute;
+  top: 12px;
+  left: 13px;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+/* 三種淡色底 + 紅色例假 */
+.calendar-cell.work {
+  background: #fff;
+}
+
+.calendar-cell.off {
+  background: #edf6ff;
+}
+
+.calendar-cell.rest {
+  background: #fffbea;
+}
+
+.calendar-cell.holiday {
+  background: #fff1f3;
+}
+
+/* 符號大小統一：圓 / 方 / 三角 / X 都佔同樣的框 */
+.status-symbol {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.status-symbol.work {
+  color: #222;
+}
+
+.status-symbol.off {
+  color: #2385ef;
+  font-size: 24px;
+}
+
+.status-symbol.rest {
+  color: #eda500;
+  font-size: 25px;
+}
+
+.status-symbol.holiday {
+  color: #e43131;
+  font-size: 28px;
+}
+
+/* 放假 */
+.leave-text {
+  position: absolute;
+  left: 50%;
+  top: 51%;
+  transform: translate(-50%, -50%);
+  color: #e43131;
+  font-size: 30px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.custom-text {
+  position: absolute;
+  left: 50%;
+  top: 59%;
+  transform: translate(-50%, -50%);
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 22px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #102a56;
+}
+
+/* 今天：不改輪班顏色，只用醒目的外框 + 今天標籤 */
+.calendar-cell.today {
+  box-shadow: inset 0 0 0 3px #287be8;
+  z-index: 1;
+}
+
+.calendar-cell.today .date-number {
+  font-weight: 800;
+  color: #1664d8;
+}
+
+.today-label {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: #287be8;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.holiday-label {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  color: #d93131;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Legend */
+.legend {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.legend-item {
+  min-height: 60px;
+  border: 1px solid #e2e7ef;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 18px;
+}
+
+.legend-symbol {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+}
+
+.legend-symbol.work { color: #222; }
+.legend-symbol.off { color: #2385ef; font-size: 24px; }
+.legend-symbol.rest { color: #eda500; font-size: 25px; }
+.legend-symbol.holiday { color: #e43131; font-size: 28px; }
+
+.calendar-note {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  color: #68758a;
+  font-size: 14px;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(16, 42, 86, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.input-modal,
+.leave-modal {
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: white;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.input-modal h2,
+.leave-modal h2 {
+  margin: 0 0 8px;
+  font-size: 25px;
+}
+
+.modal-date {
+  color: #66738b;
+  margin-bottom: 22px;
+}
+
+.input-modal label {
+  display: block;
+  font-weight: 600;
+}
+
+.input-modal input {
+  display: block;
+  width: 100%;
+  height: 52px;
+  margin-top: 8px;
+  border: 1px solid #cbd6e5;
+  border-radius: 10px;
+  padding: 0 14px;
+  outline: none;
+}
+
+.input-modal input:focus {
+  border-color: #4389ef;
+  box-shadow: 0 0 0 3px rgba(67, 137, 239, 0.12);
+}
+
+.modal-description {
+  margin: 0 0 18px;
+  color: #68758a;
+  line-height: 1.6;
+}
+
+.leave-day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 7px;
+}
+
+.leave-day {
+  min-height: 54px;
+  border: 1px solid #dce2eb;
+  border-radius: 10px;
+  background: white;
+  color: #102a56;
+  cursor: pointer;
+  position: relative;
+  font-weight: 600;
+}
+
+.leave-day.off { background: #edf6ff; }
+.leave-day.rest { background: #fffbea; }
+.leave-day.holiday { background: #fff1f3; }
+
+.leave-day.selected {
+  border: 2px solid #e43131;
+  box-shadow: inset 0 0 0 1px white;
+}
+
+.leave-day b {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  transform: translateX(-50%);
+  color: #e43131;
+  font-size: 12px;
+}
+
+.selected-summary {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f5f8fc;
+  color: #536174;
+  font-size: 14px;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.modal-buttons button {
+  min-height: 46px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 18px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cancel-button { background: #edf0f4; color: #536174; }
+.delete-button { background: #fff0f1; color: #d93131; }
+.save-button { background: #287be8; color: white; }
+
+/* Mobile */
+@media (max-width: 700px) {
+  .top-header {
+    width: calc(100% - 16px);
+    min-height: 76px;
+    margin: 8px auto;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .brand { gap: 9px; }
+  .brand-icon {
+    width: 40px;
+    height: 40px;
+    border-width: 3px;
+    font-size: 22px;
+  }
+
+  .brand h1 { font-size: 24px; }
+  .brand p { font-size: 11px; }
+
+  .login-button {
+    min-width: 70px;
+    height: 40px;
+    font-size: 15px;
+  }
+
+  .main-container {
+    width: calc(100% - 8px);
+    margin-bottom: 18px;
+  }
+
+  .user-card {
+    grid-template-columns: repeat(3, 1fr);
+    padding: 10px 6px;
+    gap: 3px;
+    border-radius: 13px;
+  }
+
+  .user-info {
+    min-height: 52px;
+    padding-left: 7px;
+  }
+
+  .info-title { font-size: 11px; margin-bottom: 3px; }
+  .user-info strong { font-size: 17px; }
+
+  .calendar-card {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 14px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-bottom: 10px;
+  }
+
+  .controls select {
+    width: 100%;
+    grid-column: 1 / -1;
+    height: 43px;
+    font-size: 16px;
+  }
+
+  .today-button,
+  .leave-month-button {
+    width: 100%;
+    height: 42px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+
+  .month-navigation {
+    grid-template-columns: 43px 1fr 43px;
+    margin-bottom: 5px;
+  }
+
+  .month-arrow {
+    width: 39px;
+    height: 39px;
+    font-size: 31px;
+  }
+
+  .month-title {
+    font-size: 22px;
+    gap: 5px;
+  }
+
+  .month-title strong { font-size: 16px; }
+
+  .weekdays div {
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .calendar-cell {
+    min-height: 78px;
+    padding: 6px;
+  }
+
+  .date-number {
+    top: 6px;
+    left: 6px;
+    font-size: 17px;
+  }
+
+  .status-symbol {
+    top: 5px;
+    right: 5px;
+    width: 21px;
+    height: 21px;
+    font-size: 18px;
+  }
+
+  .status-symbol.off { font-size: 18px; }
+  .status-symbol.rest { font-size: 19px; }
+  .status-symbol.holiday { font-size: 21px; }
+
+  .leave-text {
+    top: 52%;
+    font-size: 22px;
+  }
+
+  .custom-text {
+    top: 60%;
+    font-size: 13px;
+  }
+
+  .today-label {
+    bottom: 3px;
+    font-size: 8px;
+    padding: 1px 5px;
+  }
+
+  .holiday-label {
+    bottom: 3px;
+    right: 4px;
+    font-size: 8px;
+  }
+
+  .legend {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  .legend-item {
+    min-height: 43px;
+    border-radius: 9px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .legend-symbol {
+    width: 20px;
+    height: 20px;
+    font-size: 18px;
+  }
+
+  .legend-symbol.off { font-size: 17px; }
+  .legend-symbol.rest { font-size: 18px; }
+  .legend-symbol.holiday { font-size: 20px; }
+
+  .calendar-note {
+    font-size: 11px;
+    line-height: 1.5;
+    margin-top: 9px;
+  }
+
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 8px;
+  }
+
+  .input-modal,
+  .leave-modal {
+    border-radius: 18px 18px 12px 12px;
+    padding: 20px;
+    max-height: 88vh;
+  }
+
+  .leave-day-grid {
+    gap: 5px;
+  }
+
+  .leave-day {
+    min-height: 48px;
+    font-size: 14px;
+  }
+
+  .leave-day b {
+    font-size: 10px;
+  }
+
+  .modal-buttons {
+    margin-top: 18px;
+  }
+
+  .modal-buttons button {
+    flex: 1;
+    padding: 0 10px;
+  }
+}
