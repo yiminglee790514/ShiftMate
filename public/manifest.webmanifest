@@ -1,6 +1,6 @@
 {
-  "name": "ShiftMate 輪班行事曆",
-  "short_name": "ShiftMate",
+  "name": "輪班行事曆",
+  "short_name": "輪班行事曆",
   "description": "個人輪班行事曆 PWA",
   "start_url": "/",
   "scope": "/",

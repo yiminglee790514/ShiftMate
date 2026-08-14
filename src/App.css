@@ -14,167 +14,267 @@ input {
   color: #102a56;
 }
 
-/* Header */
+/* =========================
+   Header
+   ========================= */
 .top-header {
-  width: calc(100% - 32px);
-  max-width: 1180px;
-  margin: 16px auto;
-  min-height: 112px;
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 18px;
+  width: min(1080px, calc(100% - 32px));
+  min-height: 70px;
+  margin: 10px auto 8px;
+  padding: 9px 20px;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 34px;
-  box-shadow: 0 5px 20px rgba(20, 50, 90, 0.08);
+  box-shadow: 0 4px 16px rgba(20, 50, 90, 0.07);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
 
 .brand-icon {
-  width: 64px;
-  height: 64px;
-  border: 4px solid #102a56;
-  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+  border: 3px solid #102a56;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34px;
+  font-size: 25px;
   font-weight: 900;
+  flex: 0 0 auto;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 38px;
-  letter-spacing: 1px;
+  font-size: 27px;
+  letter-spacing: 0.3px;
 }
 
-.brand p {
-  margin: 2px 0 0;
-  font-size: 18px;
-  color: #60708c;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 .login-button {
-  min-width: 130px;
-  height: 58px;
+  min-width: 90px;
+  height: 43px;
   border: 1.5px solid #4389ef;
-  border-radius: 12px;
+  border-radius: 10px;
   background: #fff;
   color: #1664d8;
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-/* Main */
+.login-button:hover {
+  background: #f4f8ff;
+}
+
+.leave-month-button {
+  height: 43px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: #fff1f3;
+  color: #d93131;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.leave-month-button:hover {
+  background: #ffe6e9;
+}
+
+/* =========================
+   Main / User information
+   ========================= */
 .main-container {
-  width: calc(100% - 32px);
-  max-width: 1180px;
-  margin: 0 auto 40px;
+  width: min(1080px, calc(100% - 32px));
+  margin: 0 auto 18px;
 }
 
 .user-card {
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 18px;
-  padding: 22px 28px;
+  min-height: 72px;
+  background: #fff;
+  border-radius: 15px;
+  padding: 7px 12px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  box-shadow: 0 5px 20px rgba(20, 50, 90, 0.06);
+  box-shadow: 0 4px 16px rgba(20, 50, 90, 0.06);
 }
 
 .user-info {
-  min-height: 75px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 4px 22px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border-right: 1px solid #e0e6ef;
-  padding-left: 22px;
+  align-items: center;
+  gap: 11px;
+  border-right: 1px solid #e1e6ee;
 }
 
 .user-info:last-child {
   border-right: none;
 }
 
-.info-title {
-  font-size: 17px;
-  color: #66738b;
-  margin-bottom: 5px;
+.info-icon {
+  width: 34px;
+  flex: 0 0 34px;
+  text-align: center;
+  font-size: 25px;
+  line-height: 1;
+  filter: saturate(0.9);
 }
 
-.user-info strong {
-  font-size: 27px;
+.people-icon {
+  color: #4d8ff0;
 }
 
-/* Calendar */
-.calendar-card {
-  margin-top: 18px;
-  background: #fff;
-  border-radius: 20px;
-  padding: 28px;
-  box-shadow: 0 6px 24px rgba(20, 50, 90, 0.08);
+.badge-icon {
+  color: #35a66a;
+  font-size: 30px;
 }
 
-.controls {
+.person-icon {
+  color: #8d70ed;
+  font-size: 30px;
+}
+
+.info-copy {
+  min-width: 0;
   display: flex;
+  flex-direction: column;
   justify-content: center;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
 }
 
-.controls select {
-  width: 220px;
-  height: 56px;
-  border: 1px solid #cbd6e5;
-  border-radius: 12px;
-  background: white;
+.info-title {
+  display: block;
+  margin-bottom: 1px;
+  color: #66758e;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.user-info strong,
+.shift-value {
+  display: block;
   color: #102a56;
-  padding: 0 18px;
   font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
-.today-button,
-.leave-month-button {
-  height: 56px;
-  border: none;
-  border-radius: 12px;
-  padding: 0 20px;
+.shift-value {
+  width: fit-content;
+  min-width: 42px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.shift-value:active {
+  opacity: 0.7;
+}
+
+/* =========================
+   Calendar
+   ========================= */
+.calendar-card {
+  margin-top: 8px;
+  background: #fff;
+  border-radius: 17px;
+  padding: 12px 14px 12px;
+  box-shadow: 0 5px 20px rgba(20, 50, 90, 0.07);
+}
+
+.date-selectors {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 1px;
+}
+
+.date-select {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #cbd6e5;
+  border-radius: 9px;
+  background: #fff;
+  color: #102a56;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.date-select-icon {
+  width: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4389ef;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.year-select,
+.month-select {
+  height: 36px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #102a56;
+  padding: 0 9px 0 0;
+  font-size: 17px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.today-button {
-  background: #eaf3ff;
-  color: #1664d8;
+.year-select {
+  min-width: 87px;
 }
 
-.leave-month-button {
-  background: #fff1f3;
-  color: #d93131;
+.month-select {
+  min-width: 64px;
 }
 
 .month-navigation {
   display: grid;
-  grid-template-columns: 70px 1fr 70px;
+  grid-template-columns: 46px minmax(0, 1fr) 46px;
   align-items: center;
-  margin-bottom: 12px;
+  min-height: 50px;
+  margin-bottom: 3px;
 }
 
 .month-arrow {
-  width: 58px;
-  height: 58px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: 1px solid #d4dce7;
-  background: white;
+  background: #fff;
   color: #102a56;
-  font-size: 45px;
+  font-size: 29px;
   line-height: 1;
+  padding: 0 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
@@ -183,17 +283,18 @@ input {
 }
 
 .month-title {
-  text-align: center;
+  min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
-  font-size: 34px;
+  text-align: center;
 }
 
-.month-title strong {
-  font-size: 25px;
-  color: #587093;
+.month-english {
+  font-size: 24px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #102a56;
 }
 
 .weekdays {
@@ -203,11 +304,11 @@ input {
 }
 
 .weekdays div {
-  height: 48px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 19px;
+  font-size: 15px;
   font-weight: 700;
   color: #102a56;
 }
@@ -218,21 +319,21 @@ input {
   border-left: 1px solid #dce2eb;
   border-top: 1px solid #dce2eb;
   overflow: hidden;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 10px 10px;
 }
 
 .calendar-cell {
   position: relative;
-  min-height: 125px;
+  min-height: 76px;
   border: none;
   border-right: 1px solid #dce2eb;
   border-bottom: 1px solid #dce2eb;
   background: #fff;
   text-align: left;
-  padding: 13px;
+  padding: 8px;
   cursor: pointer;
   color: #102a56;
-  transition: box-shadow 0.12s ease, transform 0.12s ease;
+  transition: box-shadow 0.12s ease;
 }
 
 .calendar-cell:not(.outside-month):hover {
@@ -248,13 +349,13 @@ input {
 
 .date-number {
   position: absolute;
-  top: 12px;
-  left: 13px;
-  font-size: 24px;
+  top: 8px;
+  left: 9px;
+  font-size: 18px;
   font-weight: 500;
 }
 
-/* 三種淡色底 + 紅色例假 */
+/* 淡藍 / 淡黃 / 淡紅 */
 .calendar-cell.work {
   background: #fff;
 }
@@ -271,17 +372,17 @@ input {
   background: #fff1f3;
 }
 
-/* 符號大小統一：圓 / 方 / 三角 / X 都佔同樣的框 */
+/* 四種符號 */
 .status-symbol {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 32px;
-  height: 32px;
+  top: 7px;
+  right: 7px;
+  width: 27px;
+  height: 27px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 25px;
+  font-size: 22px;
   line-height: 1;
   font-weight: 600;
 }
@@ -292,123 +393,161 @@ input {
 
 .status-symbol.off {
   color: #2385ef;
-  font-size: 24px;
+  font-size: 21px;
 }
 
 .status-symbol.rest {
   color: #eda500;
-  font-size: 25px;
+  font-size: 22px;
 }
 
 .status-symbol.holiday {
   color: #e43131;
-  font-size: 28px;
+  font-size: 24px;
 }
 
-/* 放假 */
-.leave-text {
-  position: absolute;
-  left: 50%;
-  top: 51%;
-  transform: translate(-50%, -50%);
-  color: #e43131;
-  font-size: 30px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
+/* 自訂文字與「休」統一位置 */
+.leave-text,
 .custom-text {
   position: absolute;
   left: 50%;
-  top: 59%;
+  top: 61%;
   transform: translate(-50%, -50%);
-  max-width: 90%;
+  max-width: 82%;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 22px;
-  font-weight: 600;
   white-space: nowrap;
   color: #102a56;
-}
-
-/* 今天：不改輪班顏色，只用醒目的外框 + 今天標籤 */
-.calendar-cell.today {
-  box-shadow: inset 0 0 0 3px #287be8;
-  z-index: 1;
-}
-
-.calendar-cell.today .date-number {
-  font-weight: 800;
-  color: #1664d8;
-}
-
-.today-label {
-  position: absolute;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 9px;
-  border-radius: 20px;
-  background: #287be8;
-  color: white;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 700;
-  white-space: nowrap;
 }
 
+.leave-text {
+  color: #e43131;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+/* 國定假日直接顯示名稱 */
 .holiday-label {
   position: absolute;
-  bottom: 8px;
-  right: 10px;
+  right: 7px;
+  bottom: 5px;
+  max-width: 68%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #d93131;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
-/* Legend */
+/* =========================
+   Legend
+   ========================= */
 .legend {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-top: 22px;
+  gap: 7px;
+  margin-top: 9px;
 }
 
 .legend-item {
-  min-height: 60px;
+  min-height: 42px;
   border: 1px solid #e2e7ef;
-  border-radius: 12px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  font-size: 18px;
-}
-
-.legend-symbol {
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 25px;
-}
-
-.legend-symbol.work { color: #222; }
-.legend-symbol.off { color: #2385ef; font-size: 24px; }
-.legend-symbol.rest { color: #eda500; font-size: 25px; }
-.legend-symbol.holiday { color: #e43131; font-size: 28px; }
-
-.calendar-note {
-  margin-top: 14px;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-  color: #68758a;
+  gap: 7px;
   font-size: 14px;
 }
 
-/* Modal */
+.legend-symbol {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.legend-symbol.work { color: #222; }
+.legend-symbol.off { color: #2385ef; font-size: 19px; }
+.legend-symbol.rest { color: #eda500; font-size: 20px; }
+.legend-symbol.holiday { color: #e43131; font-size: 22px; }
+
+/* =========================
+   Shift menu
+   ========================= */
+.shift-menu-backdrop {
+  align-items: center;
+}
+
+.shift-menu {
+  width: min(430px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.shift-menu-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shift-menu h2 {
+  margin: 0;
+  font-size: 23px;
+}
+
+.shift-menu p {
+  margin: 4px 0 0;
+  color: #68758a;
+  font-size: 13px;
+}
+
+.shift-menu-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #f0f3f7;
+  color: #536174;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.shift-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.shift-option {
+  min-height: 54px;
+  border: 1px solid #dce2eb;
+  border-radius: 11px;
+  background: #fff;
+  color: #102a56;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shift-option.selected {
+  border: 2px solid #287be8;
+  background: #edf6ff;
+  color: #1664d8;
+}
+
+/* =========================
+   Modal
+   ========================= */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -533,176 +672,227 @@ input {
 .delete-button { background: #fff0f1; color: #d93131; }
 .save-button { background: #287be8; color: white; }
 
-/* Mobile */
+/* =========================
+   Mobile
+   ========================= */
 @media (max-width: 700px) {
   .top-header {
     width: calc(100% - 16px);
-    min-height: 76px;
-    margin: 8px auto;
-    padding: 12px 14px;
+    min-height: 60px;
+    margin: 7px auto;
+    padding: 7px 9px;
     border-radius: 14px;
   }
 
-  .brand { gap: 9px; }
-  .brand-icon {
-    width: 40px;
-    height: 40px;
-    border-width: 3px;
-    font-size: 22px;
+  .brand {
+    gap: 8px;
   }
 
-  .brand h1 { font-size: 24px; }
-  .brand p { font-size: 11px; }
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    border-width: 3px;
+    border-radius: 10px;
+    font-size: 19px;
+  }
+
+  .brand h1 {
+    font-size: 21px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+
+  .leave-month-button {
+    height: 36px;
+    padding: 0 9px;
+    border-radius: 9px;
+    font-size: 12px;
+  }
 
   .login-button {
-    min-width: 70px;
-    height: 40px;
-    font-size: 15px;
+    min-width: 59px;
+    height: 36px;
+    border-radius: 9px;
+    font-size: 14px;
   }
 
   .main-container {
     width: calc(100% - 8px);
-    margin-bottom: 18px;
+    margin-bottom: 8px;
   }
 
   .user-card {
-    grid-template-columns: repeat(3, 1fr);
-    padding: 10px 6px;
-    gap: 3px;
-    border-radius: 13px;
+    min-height: 61px;
+    padding: 4px 2px;
+    gap: 0;
+    border-radius: 12px;
   }
 
   .user-info {
-    min-height: 52px;
-    padding-left: 7px;
-  }
-
-  .info-title { font-size: 11px; margin-bottom: 3px; }
-  .user-info strong { font-size: 17px; }
-
-  .calendar-card {
-    margin-top: 8px;
-    padding: 8px;
-    border-radius: 14px;
-  }
-
-  .controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 7px;
-    margin-bottom: 10px;
-  }
-
-  .controls select {
-    width: 100%;
-    grid-column: 1 / -1;
-    height: 43px;
-    font-size: 16px;
-  }
-
-  .today-button,
-  .leave-month-button {
-    width: 100%;
-    height: 42px;
-    padding: 0 8px;
-    font-size: 13px;
-  }
-
-  .month-navigation {
-    grid-template-columns: 43px 1fr 43px;
-    margin-bottom: 5px;
-  }
-
-  .month-arrow {
-    width: 39px;
-    height: 39px;
-    font-size: 31px;
-  }
-
-  .month-title {
-    font-size: 22px;
+    min-height: 51px;
+    padding: 3px 5px;
     gap: 5px;
   }
 
-  .month-title strong { font-size: 16px; }
-
-  .weekdays div {
-    height: 34px;
-    font-size: 13px;
-  }
-
-  .calendar-cell {
-    min-height: 78px;
-    padding: 6px;
-  }
-
-  .date-number {
-    top: 6px;
-    left: 6px;
-    font-size: 17px;
-  }
-
-  .status-symbol {
-    top: 5px;
-    right: 5px;
-    width: 21px;
-    height: 21px;
+  .info-icon {
+    width: 24px;
+    flex-basis: 24px;
     font-size: 18px;
   }
 
-  .status-symbol.off { font-size: 18px; }
-  .status-symbol.rest { font-size: 19px; }
-  .status-symbol.holiday { font-size: 21px; }
+  .badge-icon,
+  .person-icon {
+    font-size: 22px;
+  }
+
+  .info-title {
+    font-size: 9px;
+    margin-bottom: 1px;
+  }
+
+  .user-info strong,
+  .shift-value {
+    font-size: 16px;
+  }
+
+  .calendar-card {
+    margin-top: 5px;
+    padding: 6px 4px 6px;
+    border-radius: 13px;
+  }
+
+  .date-selectors {
+    min-height: 35px;
+    gap: 5px;
+    margin-bottom: 0;
+  }
+
+  .date-select {
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .date-select-icon {
+    width: 25px;
+    flex-basis: 25px;
+    font-size: 17px;
+  }
+
+  .year-select,
+  .month-select {
+    height: 30px;
+    padding-right: 4px;
+    font-size: 14px;
+  }
+
+  .year-select {
+    min-width: 72px;
+  }
+
+  .month-select {
+    min-width: 54px;
+  }
+
+  .month-navigation {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    min-height: 41px;
+    margin-bottom: 1px;
+  }
+
+  .month-arrow {
+    width: 34px;
+    height: 34px;
+    font-size: 27px;
+    padding: 0 0 2px;
+  }
+
+  .month-english {
+    font-size: 20px;
+  }
+
+  .weekdays div {
+    height: 28px;
+    font-size: 12px;
+  }
+
+  .calendar-cell {
+    min-height: 67px;
+    padding: 5px;
+  }
+
+  .date-number {
+    top: 5px;
+    left: 5px;
+    font-size: 16px;
+  }
+
+  .status-symbol {
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    font-size: 17px;
+  }
+
+  .status-symbol.off {
+    font-size: 17px;
+  }
+
+  .status-symbol.rest {
+    font-size: 18px;
+  }
+
+  .status-symbol.holiday {
+    font-size: 20px;
+  }
+
+  /* 「休」與自行輸入內容完全同一個位置 */
+  .leave-text,
+  .custom-text {
+    top: 62%;
+  }
 
   .leave-text {
-    top: 52%;
     font-size: 22px;
   }
 
   .custom-text {
-    top: 60%;
-    font-size: 13px;
-  }
-
-  .today-label {
-    bottom: 3px;
-    font-size: 8px;
-    padding: 1px 5px;
+    font-size: 12px;
   }
 
   .holiday-label {
+    right: 3px;
     bottom: 3px;
-    right: 4px;
-    font-size: 8px;
+    max-width: 70%;
+    font-size: 7px;
   }
 
+  /* 手機優先把整個月份留給月曆 */
   .legend {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 4px;
-    margin-top: 10px;
+    display: none;
   }
 
-  .legend-item {
-    min-height: 43px;
-    border-radius: 9px;
-    gap: 4px;
-    font-size: 11px;
+  .shift-menu-backdrop {
+    align-items: flex-end;
+    padding: 8px;
   }
 
-  .legend-symbol {
-    width: 20px;
-    height: 20px;
-    font-size: 18px;
+  .shift-menu {
+    width: 100%;
+    border-radius: 18px 18px 12px 12px;
+    padding: 18px;
   }
 
-  .legend-symbol.off { font-size: 17px; }
-  .legend-symbol.rest { font-size: 18px; }
-  .legend-symbol.holiday { font-size: 20px; }
+  .shift-options {
+    gap: 8px;
+    margin-top: 15px;
+  }
 
-  .calendar-note {
-    font-size: 11px;
-    line-height: 1.5;
-    margin-top: 9px;
+  .shift-option {
+    min-height: 50px;
+    font-size: 17px;
   }
 
   .modal-backdrop {

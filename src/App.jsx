@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import "./App.css";
 
 const SHIFT_TYPES = {
@@ -292,13 +292,12 @@ export default function App() {
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [shift, setShift] = useState("A1");
+  const [showShiftMenu, setShowShiftMenu] = useState(false);
+  const shiftLongPressTimer = useRef(null);
 
   // 自訂內容：
   // K12 / 體檢 / 半天 / 休 都可以直接輸入。
-  const [customEvents, setCustomEvents] = useState({
-    "2026-08-05": "K12",
-    "2026-08-09": "半天",
-  });
+  const [customEvents, setCustomEvents] = useState({});
 
   const [showInput, setShowInput] = useState(false);
   const [inputDate, setInputDate] = useState("");
@@ -344,6 +343,26 @@ export default function App() {
     [year, month, customEvents]
   );
 
+  function openShiftMenu() {
+    setShowShiftMenu(true);
+  }
+
+  function handleShiftPointerDown() {
+    window.clearTimeout(shiftLongPressTimer.current);
+    shiftLongPressTimer.current = window.setTimeout(() => {
+      openShiftMenu();
+    }, 550);
+  }
+
+  function handleShiftPointerUp() {
+    window.clearTimeout(shiftLongPressTimer.current);
+  }
+
+  function selectShift(value) {
+    setShift(value);
+    setShowShiftMenu(false);
+  }
+
   function goPreviousMonth() {
     if (month === 0) {
       setYear((value) => value - 1);
@@ -360,11 +379,6 @@ export default function App() {
     } else {
       setMonth((value) => value + 1);
     }
-  }
-
-  function goToday() {
-    setYear(today.getFullYear());
-    setMonth(today.getMonth());
   }
 
   function openCustomInput(cell) {
@@ -486,84 +500,116 @@ export default function App() {
         )}
 
         {isOfficialHoliday && (
-          <span className="holiday-label">國</span>
+          <span className="holiday-label">{HOLIDAYS[key]}</span>
         )}
 
-        {isToday && <span className="today-label">今天</span>}
       </button>
     );
   }
 
-  const monthTitle = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-  }).format(new Date(year, month, 1));
 
   return (
     <div className="app">
       <header className="top-header">
         <div className="brand">
           <div className="brand-icon" aria-hidden="true">▦</div>
-          <div>
-            <h1>ShiftMate</h1>
-            <p>輪班行事曆</p>
-          </div>
+          <h1>輪班行事曆</h1>
         </div>
 
-        <button className="login-button" type="button">
-          登入
-        </button>
+        <div className="header-actions">
+          <button
+            className="leave-month-button"
+            onClick={openLeavePicker}
+            type="button"
+          >
+            本月放假
+          </button>
+
+          <button className="login-button" type="button">
+            登入
+          </button>
+        </div>
       </header>
 
       <main className="main-container">
         <section className="user-card">
-          <div className="user-info">
-            <span className="info-title">班別</span>
-            <strong>{shift}</strong>
+          <div className="user-info shift-info">
+            <span className="info-icon people-icon" aria-hidden="true">👥</span>
+            <div className="info-copy">
+              <span className="info-title">班別</span>
+              <button
+                className="shift-value"
+                type="button"
+                aria-label="長按選擇班別"
+                onPointerDown={handleShiftPointerDown}
+                onPointerUp={handleShiftPointerUp}
+                onPointerCancel={handleShiftPointerUp}
+                onPointerLeave={handleShiftPointerUp}
+              >
+                {shift}
+              </button>
+            </div>
           </div>
+
           <div className="user-info">
-            <span className="info-title">工號</span>
-            <strong>尚未登入</strong>
+            <span className="info-icon badge-icon" aria-hidden="true">♙</span>
+            <div className="info-copy">
+              <span className="info-title">工號</span>
+              <strong>尚未登入</strong>
+            </div>
           </div>
+
           <div className="user-info">
-            <span className="info-title">姓名</span>
-            <strong>尚未登入</strong>
+            <span className="info-icon person-icon" aria-hidden="true">♙</span>
+            <div className="info-copy">
+              <span className="info-title">姓名</span>
+              <strong>尚未登入</strong>
+            </div>
           </div>
         </section>
 
         <section className="calendar-card">
-          <div className="controls">
-            <select
-              value={shift}
-              onChange={(event) => setShift(event.target.value)}
-              aria-label="選擇班別"
-            >
-              <optgroup label="A 班">
-                <option value="A1">A1</option>
-                <option value="A2">A2</option>
-                <option value="A3">A3</option>
-              </optgroup>
-              <optgroup label="B 班">
-                <option value="B1">B1</option>
-                <option value="B2">B2</option>
-                <option value="B3">B3</option>
-              </optgroup>
-            </select>
+          <div className="date-selectors">
+            <label className="date-select year-select-wrap">
+              <span className="date-select-icon" aria-hidden="true">▦</span>
+              <select
+                className="year-select"
+                value={year}
+                onChange={(event) => setYear(Number(event.target.value))}
+                aria-label="選擇年份"
+              >
+                {Array.from({ length: 31 }, (_, index) => 2010 + index).map((value) => (
+                  <option key={value} value={value}>{value} 年</option>
+                ))}
+              </select>
+            </label>
 
-            <button className="leave-month-button" onClick={openLeavePicker} type="button">
-              本月休假
-            </button>
-
-            <button className="today-button" onClick={goToday} type="button">
-              今天
-            </button>
+            <label className="date-select month-select-wrap">
+              <span className="date-select-icon" aria-hidden="true">▦</span>
+              <select
+                className="month-select"
+                value={month}
+                onChange={(event) => setMonth(Number(event.target.value))}
+                aria-label="選擇月份"
+              >
+                {Array.from({ length: 12 }, (_, index) => (
+                  <option key={index} value={index}>{index + 1} 月</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="month-navigation">
             <button className="month-arrow" onClick={goPreviousMonth} type="button" aria-label="上一個月">‹</button>
+
             <div className="month-title">
-              <span>{monthTitle}</span>
-              <strong>{year}</strong>
+              <span className="month-english">
+                {new Intl.DateTimeFormat("en-US", { month: "long" }).format(
+                  new Date(year, month, 1)
+                )} {year}
+              </span>
             </div>
+
             <button className="month-arrow" onClick={goNextMonth} type="button" aria-label="下一個月">›</button>
           </div>
 
@@ -586,12 +632,42 @@ export default function App() {
             ))}
           </div>
 
-          <div className="calendar-note">
-            <span>點日期可輸入 K12、體檢、半天等備註。</span>
-            <span>輸入「休」或選擇本月休假後，日期中央會顯示紅色「休」。</span>
-          </div>
         </section>
       </main>
+
+      {showShiftMenu && (
+        <div className="modal-backdrop shift-menu-backdrop" onClick={() => setShowShiftMenu(false)}>
+          <div className="shift-menu" onClick={(event) => event.stopPropagation()}>
+            <div className="shift-menu-header">
+              <div>
+                <h2>選擇班別</h2>
+                <p>長按班別即可更換</p>
+              </div>
+              <button
+                className="shift-menu-close"
+                type="button"
+                onClick={() => setShowShiftMenu(false)}
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="shift-options">
+              {["A1", "A2", "A3", "B1", "B2", "B3"].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`shift-option ${shift === value ? "selected" : ""}`}
+                  onClick={() => selectShift(value)}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showInput && (
         <div className="modal-backdrop" onClick={() => setShowInput(false)}>
