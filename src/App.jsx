@@ -381,6 +381,12 @@ export default function App() {
     }
   }
 
+  function goToday() {
+    const current = new Date();
+    setYear(current.getFullYear());
+    setMonth(current.getMonth());
+  }
+
   function openCustomInput(cell) {
     if (!cell.currentMonth) return;
 
@@ -517,14 +523,6 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <button
-            className="leave-month-button"
-            onClick={openLeavePicker}
-            type="button"
-          >
-            本月放假
-          </button>
-
           <button className="login-button" type="button">
             登入
           </button>
@@ -569,6 +567,24 @@ export default function App() {
         </section>
 
         <section className="calendar-card">
+          <div className="calendar-top-actions">
+            <button
+              className="leave-month-button"
+              onClick={openLeavePicker}
+              type="button"
+            >
+              本月放假
+            </button>
+
+            <button
+              className="today-button"
+              type="button"
+              onClick={goToday}
+            >
+              今天
+            </button>
+          </div>
+
           <div className="date-selectors">
             <label className="date-select year-select-wrap">
               <span className="date-select-icon" aria-hidden="true">▦</span>
