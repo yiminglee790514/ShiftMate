@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import "./App.css";
 
 const SHIFT_TYPES = {
@@ -210,37 +210,36 @@ const A_CYCLE_START = new Date(2026, 7, 7);   // 2026/08/07
 const B_CYCLE_START = new Date(2026, 7, 13);  // 2026/08/13
 
 const A_CYCLES = {
+  // A1：2026/08/07～08/18
   A1: [
-    "off", "rest", "work", "work", "holiday", "off",
-    "work", "work", "rest", "holiday", "work", "work",
+    "off", "rest", "work", "work", "holiday", "off", "work", "work", "rest", "holiday", "work", "work",
   ],
+
+  // A2：2026/08/07～08/18
   A2: [
-    "holiday", "off", "work", "rest", "rest", "holiday",
-    "work", "off", "work", "rest", "work", "holiday",
+    "holiday", "off", "work", "work", "rest", "holiday", "work", "work", "off", "rest", "work", "work",
   ],
+
+  // A3：2026/08/07～08/18
   A3: [
-    "work", "holiday", "holiday", "off", "work", "rest",
-    "work", "holiday", "work", "off", "work", "rest",
+    "rest", "holiday", "work", "work", "off", "rest", "work", "work", "holiday", "off", "work", "work",
   ],
 };
 
 const B_CYCLES = {
-  // X1 → B1
+  // B1：2026/08/13～08/24
   B1: [
-    "off", "rest", "work", "work", "holiday", "off",
-    "work", "work", "rest", "holiday", "work", "work",
+    "off", "rest", "work", "work", "holiday", "off", "work", "work", "rest", "holiday", "work", "work",
   ],
 
-  // X2 → B2
+  // B2：2026/08/13～08/24
   B2: [
-    "holiday", "off", "work", "work", "off", "holiday",
-    "work", "work", "off", "rest", "work", "rest",
+    "holiday", "off", "work", "work", "off", "holiday", "work", "work", "off", "rest", "work", "work",
   ],
 
-  // X3 → B3
+  // B3：2026/08/13～08/24
   B3: [
-    "rest", "holiday", "work", "work", "off", "rest",
-    "work", "holiday", "work", "off", "work", "work",
+    "rest", "holiday", "work", "work", "off", "rest", "work", "work", "holiday", "off", "work", "work",
   ],
 };
 
@@ -293,7 +292,6 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth());
   const [shift, setShift] = useState("A1");
   const [showShiftMenu, setShowShiftMenu] = useState(false);
-  const shiftLongPressTimer = useRef(null);
 
   // 自訂內容：
   // K12 / 體檢 / 半天 / 休 都可以直接輸入。
@@ -324,10 +322,7 @@ export default function App() {
     return map;
   }, [cells, year, month, shift]);
 
-  const statusMap = useMemo(
-    () => applyWeeklyRule(cells, shift, year, month, baseStatusMap),
-    [cells, shift, year, month, baseStatusMap]
-  );
+  const statusMap = baseStatusMap;
 
   const monthLeaveDays = useMemo(
     () =>
@@ -345,17 +340,6 @@ export default function App() {
 
   function openShiftMenu() {
     setShowShiftMenu(true);
-  }
-
-  function handleShiftPointerDown() {
-    window.clearTimeout(shiftLongPressTimer.current);
-    shiftLongPressTimer.current = window.setTimeout(() => {
-      openShiftMenu();
-    }, 550);
-  }
-
-  function handleShiftPointerUp() {
-    window.clearTimeout(shiftLongPressTimer.current);
   }
 
   function selectShift(value) {
@@ -538,11 +522,8 @@ export default function App() {
               <button
                 className="shift-value"
                 type="button"
-                aria-label="長按選擇班別"
-                onPointerDown={handleShiftPointerDown}
-                onPointerUp={handleShiftPointerUp}
-                onPointerCancel={handleShiftPointerUp}
-                onPointerLeave={handleShiftPointerUp}
+                aria-label="選擇班別"
+                onClick={openShiftMenu}
               >
                 {shift}
               </button>
@@ -657,7 +638,7 @@ export default function App() {
             <div className="shift-menu-header">
               <div>
                 <h2>選擇班別</h2>
-                <p>長按班別即可更換</p>
+                <p>點一下班別即可更換</p>
               </div>
               <button
                 className="shift-menu-close"
