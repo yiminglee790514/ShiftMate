@@ -1012,3 +1012,153 @@ input {
     padding: 0 10px;
   }
 }
+
+
+/* =========================
+   Firebase Login
+   ========================= */
+.login-modal {
+  width: min(430px, calc(100vw - 28px));
+  max-height: min(88vh, 700px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+
+.login-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.login-modal h2 {
+  margin: 0;
+  color: #102a56;
+  font-size: 24px;
+}
+
+.login-modal-header p {
+  margin: 5px 0 0;
+  color: #68758a;
+  font-size: 13px;
+}
+
+.login-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 20px 0 16px;
+  padding: 4px;
+  background: #f3f6fa;
+  border-radius: 12px;
+}
+
+.login-mode-tabs button {
+  min-height: 44px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #66758e;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.login-mode-tabs button.active {
+  background: #fff;
+  color: #1664d8;
+  box-shadow: 0 2px 7px rgba(20, 50, 90, 0.08);
+}
+
+.employee-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.employee-login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #102a56;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.employee-login-form input {
+  width: 100%;
+  height: 50px;
+  border: 1px solid #cbd6e5;
+  border-radius: 10px;
+  padding: 0 13px;
+  outline: none;
+  color: #102a56;
+  background: #fff;
+}
+
+.employee-login-form input:focus {
+  border-color: #4389ef;
+  box-shadow: 0 0 0 3px rgba(67, 137, 239, 0.12);
+}
+
+.login-submit-button,
+.google-login-button {
+  width: 100%;
+  min-height: 50px;
+  border: none;
+  border-radius: 11px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.login-submit-button {
+  margin-top: 4px;
+  background: #287be8;
+  color: #fff;
+}
+
+.google-login-button {
+  border: 1px solid #d5deeb;
+  background: #fff;
+  color: #102a56;
+}
+
+.login-submit-button:disabled,
+.google-login-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.login-error {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: #fff1f3;
+  color: #c72f3c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .login-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .login-modal {
+    width: 100%;
+    max-height: min(82vh, 700px);
+    border-radius: 22px 22px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .login-modal h2 {
+    font-size: 22px;
+  }
+
+  .employee-login-form input {
+    height: 52px;
+  }
+}

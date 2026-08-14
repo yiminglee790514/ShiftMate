@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { firebaseConfig, FIREBASE_LOGIN_DOMAIN } from "./firebase.js";
 
 const SHIFT_TYPES = {
   work: { symbol: "○", label: "正班", className: "work" },
@@ -285,6 +286,84 @@ function isLeaveText(text) {
   return text?.trim() === "休";
 }
 
+
+// ============================================================
+// Firebase 登入
+// - 僅使用工號 + 密碼：D7445 → d7445@<FIREBASE_LOGIN_DOMAIN>
+// - 登入後從 shiftUsers/{employeeId} 讀取班別、工號、姓名
+// ============================================================
+
+function getFirebaseServices() {
+  if (!window.firebase) {
+    throw new Error("Firebase Web SDK 尚未載入");
+  }
+
+  if (!window.__shiftmateFirebaseApp) {
+    const required = [
+      "apiKey",
+      "authDomain",
+      "projectId",
+      "appId",
+    ];
+
+    const missing = required.filter((key) => !firebaseConfig[key]);
+    if (missing.length) {
+      throw new Error(`Firebase 設定尚未完成：${missing.join(", ")}`);
+    }
+
+    window.__shiftmateFirebaseApp = window.firebase.initializeApp(firebaseConfig);
+  }
+
+  return {
+    auth: window.firebase.auth(),
+    db: window.firebase.firestore(),
+  };
+}
+
+function employeeIdToEmail(employeeId) {
+  const normalized = employeeId.trim().toLowerCase();
+
+  if (!normalized) {
+    throw new Error("請輸入工號");
+  }
+
+  if (!FIREBASE_LOGIN_DOMAIN) {
+    throw new Error("尚未設定 Firebase 登入 Email 網域");
+  }
+
+  return `${normalized}@${FIREBASE_LOGIN_DOMAIN}`;
+}
+
+async function loadShiftUser(db, user) {
+  // D7445 帳密登入：文件 ID 直接就是 D7445。
+  const employeeId =
+    user?.employeeId ||
+    user?.displayName ||
+    user?.email?.split("@")[0]?.toUpperCase();
+
+  if (employeeId) {
+    const direct = await db.collection("shiftUsers").doc(employeeId).get();
+    if (direct.exists) return direct.data();
+  }
+
+  if (user?.uid) {
+    const byUid = await db.collection("shiftUsers").doc(user.uid).get();
+    if (byUid.exists) return byUid.data();
+  }
+
+  if (user?.email) {
+    const byEmail = await db
+      .collection("shiftUsers")
+      .where("email", "==", user.email)
+      .limit(1)
+      .get();
+
+    if (!byEmail.empty) return byEmail.docs[0].data();
+  }
+
+  return null;
+}
+
 export default function App() {
   const today = new Date();
 
@@ -292,6 +371,15 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth());
   const [shift, setShift] = useState("A1");
   const [showShiftMenu, setShowShiftMenu] = useState(false);
+
+  // Firebase 登入狀態
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [shiftUser, setShiftUser] = useState(null);
+  const [showLoginMenu, setShowLoginMenu] = useState(false);
+  const [loginEmployeeId, setLoginEmployeeId] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
 
   // 自訂內容：
   // K12 / 體檢 / 半天 / 休 都可以直接輸入。
@@ -304,6 +392,60 @@ export default function App() {
   // 「本月休假」批次輸入
   const [showLeavePicker, setShowLeavePicker] = useState(false);
   const [selectedLeaveDays, setSelectedLeaveDays] = useState([]);
+  // 已儲存的自訂行程是否已從 Firebase 載入完成。
+  // 載入完成前不執行自動儲存，避免重新整理時用空資料覆蓋雲端資料。
+  const [customEventsLoaded, setCustomEventsLoaded] = useState(false);
+
+  useEffect(() => {
+    let unsubscribe = null;
+
+    try {
+      const { auth } = getFirebaseServices();
+
+      unsubscribe = auth.onAuthStateChanged(async (user) => {
+        setFirebaseUser(user);
+        setCustomEventsLoaded(false);
+
+        if (!user) {
+          setShiftUser(null);
+          setCustomEvents({});
+          setCustomEventsLoaded(true);
+          return;
+        }
+
+        try {
+          const { db } = getFirebaseServices();
+          const profile = await loadShiftUser(db, user);
+          setShiftUser(profile);
+
+          if (profile?.shift && ["A1", "A2", "A3", "B1", "B2", "B3"].includes(profile.shift)) {
+            setShift(profile.shift);
+          }
+
+          // 從 Firebase 載入這個帳號之前儲存的行事曆自訂內容。
+          const calendarDoc = await db.collection("users").doc(user.uid).get();
+          const calendarData = calendarDoc.exists ? calendarDoc.data() : {};
+          setCustomEvents(
+            calendarData?.customEvents && typeof calendarData.customEvents === "object"
+              ? calendarData.customEvents
+              : {}
+          );
+          setCustomEventsLoaded(true);
+        } catch (error) {
+          console.error("讀取使用者資料失敗：", error);
+          setShiftUser(null);
+          setCustomEvents({});
+          setCustomEventsLoaded(true);
+        }
+      });
+    } catch (error) {
+      console.error("Firebase 初始化失敗：", error);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const cells = useMemo(
     () => getCalendarCells(year, month),
@@ -338,6 +480,74 @@ export default function App() {
     [year, month, customEvents]
   );
 
+  function openLoginMenu() {
+    setLoginError("");
+    setLoginPassword("");
+    setShowLoginMenu(true);
+  }
+
+  async function loginWithEmployee() {
+    setLoginError("");
+
+    if (!loginEmployeeId.trim() || !loginPassword) {
+      setLoginError("請輸入工號與密碼");
+      return;
+    }
+
+    setLoginBusy(true);
+
+    try {
+      const { auth, db } = getFirebaseServices();
+      const email = employeeIdToEmail(loginEmployeeId);
+
+      const result = await auth.signInWithEmailAndPassword(email, loginPassword);
+      const profile = await db
+        .collection("shiftUsers")
+        .doc(loginEmployeeId.trim().toUpperCase())
+        .get();
+
+      if (!profile.exists) {
+        await auth.signOut();
+        throw new Error(`找不到 shiftUsers/${loginEmployeeId.trim().toUpperCase()}`);
+      }
+
+      const data = profile.data();
+      setShiftUser(data);
+
+      if (data?.shift && ["A1", "A2", "A3", "B1", "B2", "B3"].includes(data.shift)) {
+        setShift(data.shift);
+      }
+
+      setShowLoginMenu(false);
+      setLoginPassword("");
+    } catch (error) {
+      console.error("工號登入失敗：", error);
+      const code = error?.code || "";
+
+      if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+        setLoginError("工號或密碼錯誤");
+      } else if (code.includes("invalid-email")) {
+        setLoginError("工號對應的登入 Email 設定錯誤");
+      } else {
+        setLoginError(error?.message || "登入失敗");
+      }
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+
+  async function logoutFirebase() {
+    try {
+      const { auth } = getFirebaseServices();
+      await auth.signOut();
+      setFirebaseUser(null);
+      setShiftUser(null);
+    } catch (error) {
+      console.error("登出失敗：", error);
+    }
+  }
+
   function openShiftMenu() {
     setShowShiftMenu(true);
   }
@@ -371,6 +581,32 @@ export default function App() {
     setMonth(current.getMonth());
   }
 
+  async function saveCustomEventsToFirebase(nextEvents) {
+    if (!firebaseUser?.uid || !customEventsLoaded) return;
+
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("users").doc(firebaseUser.uid).set(
+        {
+          customEvents: nextEvents,
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error("儲存行事曆失敗：", error);
+      // Firebase 暫時無法寫入時，仍保留在瀏覽器，避免使用者當下編輯內容消失。
+      try {
+        localStorage.setItem(
+          `shiftmate_customEvents_${firebaseUser.uid}`,
+          JSON.stringify(nextEvents)
+        );
+      } catch {
+        // ignore localStorage errors
+      }
+    }
+  }
+
   function openCustomInput(cell) {
     if (!cell.currentMonth) return;
 
@@ -380,31 +616,28 @@ export default function App() {
     setShowInput(true);
   }
 
-  function saveCustomEvent() {
+  async function saveCustomEvent() {
     if (!inputDate) return;
 
-    setCustomEvents((old) => {
-      const next = { ...old };
+    const next = { ...customEvents };
 
-      if (inputText.trim()) {
-        next[inputDate] = inputText.trim();
-      } else {
-        delete next[inputDate];
-      }
+    if (inputText.trim()) {
+      next[inputDate] = inputText.trim();
+    } else {
+      delete next[inputDate];
+    }
 
-      return next;
-    });
-
+    setCustomEvents(next);
+    await saveCustomEventsToFirebase(next);
     setShowInput(false);
   }
 
-  function removeCustomEvent() {
-    setCustomEvents((old) => {
-      const next = { ...old };
-      delete next[inputDate];
-      return next;
-    });
+  async function removeCustomEvent() {
+    const next = { ...customEvents };
+    delete next[inputDate];
 
+    setCustomEvents(next);
+    await saveCustomEventsToFirebase(next);
     setShowInput(false);
   }
 
@@ -423,22 +656,20 @@ export default function App() {
     );
   }
 
-  function saveLeaveDays() {
-    setCustomEvents((old) => {
-      const next = { ...old };
+  async function saveLeaveDays() {
+    const next = { ...customEvents };
 
-      monthLeaveDays.forEach(({ key, day }) => {
-        const shouldLeave = selectedLeaveDays.includes(day);
-        if (shouldLeave) {
-          next[key] = "休";
-        } else if (isLeaveText(next[key])) {
-          delete next[key];
-        }
-      });
-
-      return next;
+    monthLeaveDays.forEach(({ key, day }) => {
+      const shouldLeave = selectedLeaveDays.includes(day);
+      if (shouldLeave) {
+        next[key] = "休";
+      } else if (isLeaveText(next[key])) {
+        delete next[key];
+      }
     });
 
+    setCustomEvents(next);
+    await saveCustomEventsToFirebase(next);
     setShowLeavePicker(false);
   }
 
@@ -507,9 +738,15 @@ export default function App() {
         </div>
 
         <div className="header-actions">
-          <button className="login-button" type="button">
-            登入
-          </button>
+          {firebaseUser ? (
+            <button className="login-button" type="button" onClick={logoutFirebase}>
+              登出
+            </button>
+          ) : (
+            <button className="login-button" type="button" onClick={openLoginMenu}>
+              登入
+            </button>
+          )}
         </div>
       </header>
 
@@ -525,7 +762,7 @@ export default function App() {
                 aria-label="選擇班別"
                 onClick={openShiftMenu}
               >
-                {shift}
+                {shiftUser?.shift || shift}
               </button>
             </div>
           </div>
@@ -534,7 +771,7 @@ export default function App() {
             <span className="info-icon badge-icon" aria-hidden="true">♙</span>
             <div className="info-copy">
               <span className="info-title">工號</span>
-              <strong>尚未登入</strong>
+              <strong>{shiftUser?.employeeId || firebaseUser?.email?.split("@")[0]?.toUpperCase() || "尚未登入"}</strong>
             </div>
           </div>
 
@@ -542,7 +779,7 @@ export default function App() {
             <span className="info-icon person-icon" aria-hidden="true">♙</span>
             <div className="info-copy">
               <span className="info-title">姓名</span>
-              <strong>尚未登入</strong>
+              <strong>{shiftUser?.name || "尚未登入"}</strong>
             </div>
           </div>
         </section>
@@ -631,6 +868,64 @@ export default function App() {
 
         </section>
       </main>
+
+      {showLoginMenu && (
+        <div className="modal-backdrop login-backdrop" onClick={() => setShowLoginMenu(false)}>
+          <div className="login-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="login-modal-header">
+              <div>
+                <h2>登入輪班行事曆</h2>
+                <p>使用工號＋密碼登入</p>
+              </div>
+              <button
+                className="shift-menu-close"
+                type="button"
+                onClick={() => setShowLoginMenu(false)}
+                aria-label="關閉"
+              >
+                ×
+              </button>
+            </div>
+
+            <form
+              className="employee-login-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!loginBusy) loginWithEmployee();
+              }}
+            >
+              <label>
+                工號
+                <input
+                  type="text"
+                  value={loginEmployeeId}
+                  onChange={(event) => setLoginEmployeeId(event.target.value.toUpperCase())}
+                  placeholder="例如 D7445"
+                  autoCapitalize="characters"
+                  autoComplete="username"
+                />
+              </label>
+
+              <label>
+                密碼
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(event) => setLoginPassword(event.target.value)}
+                  placeholder="請輸入密碼"
+                  autoComplete="current-password"
+                />
+              </label>
+
+              <button className="login-submit-button" type="submit" disabled={loginBusy}>
+                {loginBusy ? "登入中…" : "登入"}
+              </button>
+            </form>
+
+            {loginError && <div className="login-error">{loginError}</div>}
+          </div>
+        </div>
+      )}
 
       {showShiftMenu && (
         <div className="modal-backdrop shift-menu-backdrop" onClick={() => setShowShiftMenu(false)}>
