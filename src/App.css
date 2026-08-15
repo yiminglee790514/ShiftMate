@@ -516,6 +516,27 @@ input {
 .legend-symbol.rest { color: #eda500; font-size: 20px; }
 .legend-symbol.holiday { color: #e43131; font-size: 22px; }
 
+.month-leave-summary {
+  margin-top: 9px;
+  min-height: 42px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  background: #f4f7fb;
+  color: #52627a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.month-leave-summary-title {
+  font-weight: 800;
+  color: #173967;
+}
+
+
 /* =========================
    Shift menu
    ========================= */
@@ -910,8 +931,8 @@ input {
   }
 
   .leave-text {
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 400;
   }
 
   .custom-text {

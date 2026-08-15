@@ -1308,6 +1308,16 @@ export default function App() {
             ))}
           </div>
 
+          <div className="month-leave-summary">
+            <span className="month-leave-summary-title">{month + 1}月份放假：</span>
+            <span>
+              {monthLeaveDays
+                .filter(({ key }) => isLeaveText(customEvents[key]))
+                .map(({ day }) => `${day}號`)
+                .join('、') || '無'}
+            </span>
+          </div>
+
         </section>
       </main>
 
