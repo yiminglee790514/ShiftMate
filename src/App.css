@@ -910,7 +910,7 @@ input {
   }
 
   .leave-text {
-    font-size: 24px;
+    font-size: 18px;
     font-weight: 400;
   }
 
@@ -935,10 +935,12 @@ input {
     padding: 8px;
   }
 
+  /* 手機版班別視窗往上移一點，避免整個視窗貼在底部 */
   .shift-menu {
     width: 100%;
     border-radius: 18px 18px 12px 12px;
     padding: 18px;
+    transform: translateY(-120px);
   }
 
   .shift-options {
@@ -947,8 +949,23 @@ input {
   }
 
   .shift-option {
-    min-height: 50px;
-    font-size: 17px;
+    min-height: 62px;
+    font-size: 18px;
+  }
+
+  /* 手機上班別 A1 的實際點擊區放大，文字外觀不變 */
+  .shift-info {
+    gap: 12px;
+  }
+
+  .shift-info .shift-value {
+    min-width: 64px;
+    min-height: 42px;
+    padding: 7px 10px;
+    margin: -7px -10px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
   }
 
   .modal-backdrop {
@@ -963,6 +980,11 @@ input {
     padding: 20px;
     max-height: calc(100dvh - 20px);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  }
+
+  /* 手機版本月放假視窗往上移一點，不要整個貼到底部 */
+  .leave-modal {
+    transform: translateY(-100px);
   }
 
   .leave-modal {
