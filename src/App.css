@@ -739,8 +739,8 @@ input {
    ========================= */
 @media (max-width: 700px) {
   .app {
-    /* 手機版整體往上 6px；保留 safe-area，避免碰到動態島 */
-    padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
+    /* 手機版整體往上 12px；保留 safe-area，避免碰到動態島 */
+    padding-top: calc(env(safe-area-inset-top, 0px) + 2px);
   }
 
   .top-header {
