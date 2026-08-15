@@ -421,6 +421,28 @@ async function loadShiftUser(db, user) {
 export default function App() {
   const today = new Date();
 
+  async function copyMonthLeaveSummary() {
+    const days = monthLeaveDays
+      .filter(({ key }) => isLeaveText(customEvents[key]))
+      .map(({ day }) => `${day}號`)
+      .join("、") || "無";
+    const text = `${month + 1}月份放假：${days}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+  }
+
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [shift, setShift] = useState("A1");
@@ -1309,7 +1331,14 @@ export default function App() {
           </div>
 
           <div className="month-leave-summary">
-            <span className="month-leave-summary-title">{month + 1}月份放假：</span>
+            <button
+              type="button"
+              className="month-leave-summary-title"
+              onClick={copyMonthLeaveSummary}
+              aria-label="複製本月放假日期"
+            >
+              {month + 1}月份放假：
+            </button>
             <span>
               {monthLeaveDays
                 .filter(({ key }) => isLeaveText(customEvents[key]))
