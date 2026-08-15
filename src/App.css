@@ -444,8 +444,8 @@ input {
 
 .leave-text {
   color: #e43131;
-  font-size: 28px;
-  font-weight: 800;
+  font-size: 24px;
+  font-weight: 400;
 }
 
 /* 國定假日直接顯示名稱 */
@@ -910,7 +910,8 @@ input {
   }
 
   .leave-text {
-    font-size: 22px;
+    font-size: 24px;
+    font-weight: 400;
   }
 
   .custom-text {
@@ -1161,4 +1162,192 @@ input {
   .employee-login-form input {
     height: 52px;
   }
+}
+
+/* =========================
+   Admin
+   ========================= */
+.admin-button {
+  min-width: 70px;
+  height: 43px;
+  border: 1.5px solid #7b63e8;
+  border-radius: 10px;
+  background: #fff;
+  color: #654bd0;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.admin-modal {
+  width: min(760px, calc(100vw - 24px));
+  max-height: min(92vh, 820px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.22);
+}
+.admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 18px 0;
+  padding: 4px;
+  background: #f3f6fa;
+  border-radius: 12px;
+}
+.admin-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #66758e;
+  font-weight: 800;
+  cursor: pointer;
+}
+.admin-tabs button.active {
+  background: #fff;
+  color: #1664d8;
+  box-shadow: 0 2px 7px rgba(20,50,90,.08);
+}
+.admin-section h3 { margin: 8px 0 12px; color:#102a56; }
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px;
+}
+.admin-form-grid input,
+.admin-form-grid select,
+.admin-edit-box input {
+  min-height: 46px;
+  width: 100%;
+  border: 1px solid #cbd6e5;
+  border-radius: 10px;
+  padding: 0 12px;
+  outline: 0;
+  color: #102a56;
+  background: #fff;
+}
+.admin-form-grid input:focus,
+.admin-form-grid select:focus,
+.admin-edit-box input:focus { border-color:#4389ef; }
+.admin-message {
+  padding: 10px 12px;
+  margin: 10px 0;
+  border-radius: 10px;
+  background: #edf6ff;
+  color: #1664d8;
+  font-weight: 700;
+}
+.admin-list-title { margin-top: 22px !important; }
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 340px;
+  overflow: auto;
+}
+.admin-list-row {
+  min-height: 52px;
+  border: 1px solid #e0e6ee;
+  border-radius: 11px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.admin-list-row > div:first-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-list-row strong { color:#102a56; }
+.admin-list-row span { color:#536174; }
+.admin-list-row em {
+  font-style: normal;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background:#edf6ff;
+  color:#1664d8;
+  font-weight:800;
+}
+.admin-list-row button {
+  min-height: 36px;
+  border: 1px solid #d4dce7;
+  border-radius: 8px;
+  background:#fff;
+  color:#1664d8;
+  font-weight:700;
+  padding:0 10px;
+  cursor:pointer;
+}
+.admin-row-actions { display:flex; gap:6px; }
+.admin-edit-box {
+  display:grid;
+  grid-template-columns: 1fr 1.4fr auto;
+  gap:8px;
+  margin-top:12px;
+  padding:10px;
+  border-radius:11px;
+  background:#f5f8fc;
+}
+.login-page {
+  min-height: 100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:#f5f8fc;
+  color:#102a56;
+}
+.login-card {
+  width:min(420px,100%);
+  background:#fff;
+  border-radius:22px;
+  padding:30px;
+  box-shadow:0 12px 40px rgba(20,50,90,.12);
+  text-align:center;
+}
+.login-card .brand-icon { margin:0 auto 14px; }
+.login-card h1 { margin:0; font-size:28px; }
+.login-card > p { margin:8px 0 24px; color:#68758a; }
+.login-card .employee-login-form { text-align:left; }
+
+@media (max-width:700px) {
+  .admin-button { min-width:58px; height:36px; font-size:13px; }
+  .admin-modal { width:100%; max-height:calc(100dvh - 16px); border-radius:20px 20px 12px 12px; padding:18px; }
+  .admin-form-grid { grid-template-columns:1fr; }
+  .admin-edit-box { grid-template-columns:1fr; }
+  .admin-list-row > div:first-child { flex-wrap:wrap; gap:7px; }
+  .login-page { padding:16px; }
+  .login-card { padding:24px 20px; }
+}
+
+/* 管理者人員清單操作按鈕 */
+.admin-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.admin-row-actions button {
+  white-space: nowrap;
+}
+
+.admin-row-actions .danger-button {
+  color: #c62828;
+  border-color: #efb4b4;
+  background: #fff7f7;
+}
+
+.admin-row-actions .danger-button:hover {
+  background: #ffecec;
+}
+
+.admin-row-actions .danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

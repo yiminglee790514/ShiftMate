@@ -3,15 +3,43 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 使用者基本資料：登入後允許讀取，禁止 App 端直接修改。
-    match /shiftUsers/{employeeId} {
-      allow read: if request.auth != null;
-      allow write: if false;
+    // 管理者帳號。
+    // 目前使用 ADMIN 與 D7445 兩個管理者登入。
+    function isAdmin() {
+      return request.auth != null
+        && (
+          request.auth.token.email == "admin@shiftmate-login.com"
+          || request.auth.token.email == "d7445@shiftmate-login.com"
+        );
     }
 
-    // 原本資料規則保留
+    match /shiftUsers/{employeeId} {
+      // 一般員工只能讀自己的文件；管理者可讀全部。
+      allow read: if isAdmin() || (
+        request.auth != null &&
+        request.auth.token.email != null &&
+        request.auth.token.email.split("@")[0].lower() == employeeId.lower()
+      );
+
+      // 新增、修改、移除人員只能由管理者執行。
+      allow create, update, delete: if isAdmin();
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isAdmin();
+    }
+
+    // 管理者建立的全員行程：所有登入員工可以讀，只有管理者可以改。
+    match /globalEvents/{eventId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 國定假日覆寫設定：所有登入員工可以讀，只有管理者可以改。
+    match /holidayOverrides/{holidayId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isAdmin();
     }
 
     match /trips/{tripId} {

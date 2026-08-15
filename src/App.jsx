@@ -9,45 +9,99 @@ const SHIFT_TYPES = {
   holiday: { symbol: "×", label: "例假日", className: "holiday" },
 };
 
-// 目前先建立 2026 年台灣國定假日資料。
-// 後續可再擴充其他年度，輪班本身則不會被國定假日覆蓋。
-const HOLIDAYS = {
-  "2026-01-01": "元旦",
-  "2026-02-14": "春節連假",
-  "2026-02-15": "春節連假",
-  "2026-02-16": "春節連假",
-  "2026-02-17": "春節連假",
-  "2026-02-18": "春節連假",
-  "2026-02-19": "春節連假",
-  "2026-02-20": "春節連假",
-  "2026-02-21": "春節連假",
-  "2026-02-22": "春節連假",
-  "2026-02-27": "和平紀念日補假",
-  "2026-02-28": "和平紀念日",
-  "2026-04-03": "兒童節、清明節連假",
-  "2026-04-04": "兒童節",
-  "2026-04-05": "清明節",
-  "2026-04-06": "兒童節、清明節補假",
-  "2026-05-01": "勞動節",
-  "2026-05-02": "勞動節連假",
-  "2026-05-03": "勞動節連假",
-  "2026-06-19": "端午節",
-  "2026-06-20": "端午節連假",
-  "2026-06-21": "端午節連假",
-  "2026-09-25": "中秋節",
-  "2026-09-26": "中秋節連假",
-  "2026-09-27": "中秋節連假",
-  "2026-09-28": "孔子誕辰紀念日／教師節",
-  "2026-10-09": "國慶日補假",
-  "2026-10-10": "國慶日",
-  "2026-10-11": "國慶日連假",
-  "2026-10-24": "臺灣光復暨金門古寧頭大捷紀念日連假",
-  "2026-10-25": "臺灣光復暨金門古寧頭大捷紀念日",
-  "2026-10-26": "臺灣光復暨金門古寧頭大捷紀念日補假",
-  "2026-12-25": "行憲紀念日",
-  "2026-12-26": "行憲紀念日連假",
-  "2026-12-27": "行憲紀念日連假",
-};
+// 國定假日：固定國曆 + 農曆節日。每個年份都會自動產生。
+// Admin 可在 Firebase 的 holidayOverrides/{year_id} 覆寫名稱、日期或停用。
+const FIXED_HOLIDAY_DEFS = [
+  { id: "new-year", month: 1, day: 1, name: "元旦" },
+  { id: "peace", month: 2, day: 28, name: "和平紀念日" },
+  { id: "children", month: 4, day: 4, name: "兒童節" },
+  { id: "qingming", month: 4, day: 5, name: "清明節" },
+  { id: "labor", month: 5, day: 1, name: "勞動節" },
+  { id: "teacher", month: 9, day: 28, name: "教師節" },
+  { id: "national", month: 10, day: 10, name: "國慶日" },
+  { id: "retrocession", month: 10, day: 25, name: "光復節" },
+  { id: "constitution", month: 12, day: 25, name: "行憲紀念日" },
+];
+
+function chineseLunarMonthDay(date) {
+  try {
+    const parts = new Intl.DateTimeFormat("zh-TW-u-ca-chinese", {
+      month: "numeric",
+      day: "numeric",
+    }).formatToParts(date);
+    const month = Number(parts.find((p) => p.type === "month")?.value);
+    const day = Number(parts.find((p) => p.type === "day")?.value);
+    return { month, day };
+  } catch {
+    return null;
+  }
+}
+
+function getLunarNewYearDate(year) {
+  const start = new Date(year, 0, 1);
+  const end = new Date(year, 2, 15);
+  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    const lunar = chineseLunarMonthDay(date);
+    if (lunar?.month === 1 && lunar.day === 1) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+  }
+  return null;
+}
+
+function getSystemHolidayDefinitions(year) {
+  const holidays = FIXED_HOLIDAY_DEFS.map((item) => ({
+    id: item.id,
+    date: dateKey(year, item.month - 1, item.day),
+    name: item.name,
+  }));
+
+  const newYear = getLunarNewYearDate(year);
+  if (newYear) {
+    const addDays = (offset) => {
+      const date = new Date(newYear);
+      date.setDate(date.getDate() + offset);
+      return dateKey(date.getFullYear(), date.getMonth(), date.getDate());
+    };
+
+    holidays.push(
+      { id: "lunar-eve-before", date: addDays(-2), name: "小年夜" },
+      { id: "lunar-eve", date: addDays(-1), name: "除夕" },
+      { id: "lunar-new-year", date: addDays(0), name: "初一" },
+      { id: "lunar-day-2", date: addDays(1), name: "初二" },
+      { id: "lunar-day-3", date: addDays(2), name: "初三" },
+      { id: "dragon-boat", date: findLunarDate(year, 5, 5), name: "端午節" },
+      { id: "mid-autumn", date: findLunarDate(year, 8, 15), name: "中秋節" },
+    );
+  }
+
+  return holidays.filter((item) => item.date);
+}
+
+function findLunarDate(year, lunarMonth, lunarDay) {
+  const start = new Date(year, 0, 1);
+  const end = new Date(year, 11, 31);
+  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    const lunar = chineseLunarMonthDay(date);
+    if (lunar?.month === lunarMonth && lunar.day === lunarDay) {
+      return dateKey(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+  }
+  return null;
+}
+
+function buildHolidayMap(year, overrides = {}) {
+  const map = {};
+  getSystemHolidayDefinitions(year).forEach((item) => {
+    const override = overrides[item.id];
+    if (override?.enabled === false) return;
+
+    const date = override?.date || item.date;
+    const name = override?.name?.trim() || item.name;
+    if (date && name) map[date] = { id: item.id, name };
+  });
+  return map;
+}
 
 // 2026/8 月保留你之前提供的原始資料，作為參考與備份。
 // 真正顯示班別時，現在改由下方「12 天週期」自動計算。
@@ -395,6 +449,18 @@ export default function App() {
   // 已儲存的自訂行程是否已從 Firebase 載入完成。
   // 載入完成前不執行自動儲存，避免重新整理時用空資料覆蓋雲端資料。
   const [customEventsLoaded, setCustomEventsLoaded] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [globalEvents, setGlobalEvents] = useState({});
+  const [holidayOverrides, setHolidayOverrides] = useState({});
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminTab, setAdminTab] = useState("people");
+  const [adminPeople, setAdminPeople] = useState([]);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminMessage, setAdminMessage] = useState("");
+  const [personForm, setPersonForm] = useState({ employeeId: "", name: "", shift: "A1", password: "" });
+  const [editingPersonId, setEditingPersonId] = useState("");
+  const [globalEventForm, setGlobalEventForm] = useState({ date: "", text: "" });
+  const [holidayForm, setHolidayForm] = useState({ id: "", date: "", name: "" });
 
   useEffect(() => {
     let unsubscribe = null;
@@ -409,18 +475,41 @@ export default function App() {
         if (!user) {
           setShiftUser(null);
           setCustomEvents({});
+          setGlobalEvents({});
+          setHolidayOverrides({});
           setCustomEventsLoaded(true);
+          setAuthReady(true);
           return;
         }
 
         try {
           const { db } = getFirebaseServices();
-          const profile = await loadShiftUser(db, user);
+          let profile = await loadShiftUser(db, user);
+          if (!profile && user.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase()) {
+            profile = { employeeId: "Admin", name: "管理者", role: "admin", shift: "" };
+          }
+          if (profile?.active === false) {
+            await auth.signOut();
+            setShiftUser(null);
+            setCustomEvents({});
+            setCustomEventsLoaded(true);
+            setAuthReady(true);
+            return;
+          }
+
           setShiftUser(profile);
 
           if (profile?.shift && ["A1", "A2", "A3", "B1", "B2", "B3"].includes(profile.shift)) {
             setShift(profile.shift);
           }
+
+          const globalSnapshot = await db.collection("globalEvents").get();
+          const globals = {};
+          globalSnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (data?.date && data?.text) globals[data.date] = { id: doc.id, text: data.text };
+          });
+          setGlobalEvents(globals);
 
           // 從 Firebase 載入這個帳號之前儲存的行事曆自訂內容。
           const calendarDoc = await db.collection("users").doc(user.uid).get();
@@ -431,14 +520,17 @@ export default function App() {
               : {}
           );
           setCustomEventsLoaded(true);
+          setAuthReady(true);
         } catch (error) {
           console.error("讀取使用者資料失敗：", error);
           setShiftUser(null);
           setCustomEvents({});
           setCustomEventsLoaded(true);
+          setAuthReady(true);
         }
       });
     } catch (error) {
+      setAuthReady(true);
       console.error("Firebase 初始化失敗：", error);
     }
 
@@ -446,6 +538,24 @@ export default function App() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { db } = getFirebaseServices();
+        const snapshot = await db.collection("holidayOverrides").where("year", "==", year).get();
+        const map = {};
+        snapshot.forEach((doc) => { map[doc.id] = doc.data(); });
+        if (!cancelled) setHolidayOverrides(map);
+      } catch (error) {
+        console.error("讀取國定假日設定失敗：", error);
+        if (!cancelled) setHolidayOverrides({});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [firebaseUser, year]);
 
   const cells = useMemo(
     () => getCalendarCells(year, month),
@@ -474,10 +584,10 @@ export default function App() {
         return {
           day,
           key,
-          selected: isLeaveText(customEvents[key]),
+          selected: isLeaveText(customEvents[key]) || statusMap[key] === "holiday",
         };
       }),
-    [year, month, customEvents]
+    [year, month, customEvents, statusMap]
   );
 
   function openLoginMenu() {
@@ -501,17 +611,26 @@ export default function App() {
       const email = employeeIdToEmail(loginEmployeeId);
 
       const result = await auth.signInWithEmailAndPassword(email, loginPassword);
-      const profile = await db
-        .collection("shiftUsers")
-        .doc(loginEmployeeId.trim().toUpperCase())
-        .get();
+      const normalizedId = loginEmployeeId.trim().toUpperCase();
+      const profile = await db.collection("shiftUsers").doc(normalizedId).get();
+      let data = profile.exists ? profile.data() : null;
 
-      if (!profile.exists) {
-        await auth.signOut();
-        throw new Error(`找不到 shiftUsers/${loginEmployeeId.trim().toUpperCase()}`);
+      if (!data && normalizedId === "ADMIN") {
+        data = { employeeId: "Admin", name: "管理者", role: "admin", shift: "" };
       }
 
-      const data = profile.data();
+      if (!data) {
+        await auth.signOut();
+        throw new Error("此工號尚未建立，請找系統管理員新增。");
+      }
+
+      if (data.active === false) {
+        await auth.signOut();
+        setShiftUser(null);
+        setLoginError("此工號目前已停用，請聯絡系統管理員。");
+        return;
+      }
+
       setShiftUser(data);
 
       if (data?.shift && ["A1", "A2", "A3", "B1", "B2", "B3"].includes(data.shift)) {
@@ -642,6 +761,9 @@ export default function App() {
   }
 
   function openLeavePicker() {
+    // 開啟「本月放假」時，除了已儲存的「休」，
+    // 也預先選取目前班表的「× 例假日」。
+    // 這只是編輯畫面的預選，不會在尚未儲存時自動寫入「休」。
     setSelectedLeaveDays(
       monthLeaveDays.filter((item) => item.selected).map((item) => item.day)
     );
@@ -673,6 +795,279 @@ export default function App() {
     setShowLeavePicker(false);
   }
 
+  const isAdmin = shiftUser?.role === "admin" || firebaseUser?.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase();
+
+  const currentHolidayMap = useMemo(
+    () => buildHolidayMap(year, holidayOverrides),
+    [year, holidayOverrides]
+  );
+
+  async function loadAdminPeople() {
+    if (!isAdmin) return;
+    const { db } = getFirebaseServices();
+    const snapshot = await db.collection("shiftUsers").orderBy("employeeId").get();
+
+    // 舊資料可能曾經留下重複的人員文件；畫面上同一工號只顯示一次。
+    const uniquePeople = new Map();
+    snapshot.docs.forEach((doc) => {
+      const data = doc.data() || {};
+      const employeeId = String(data.employeeId || doc.id || "").trim().toUpperCase();
+      if (!employeeId || data.active === false) return;
+
+      // 優先使用「文件 ID = 工號」的正規文件。
+      if (!uniquePeople.has(employeeId) || doc.id === employeeId) {
+        uniquePeople.set(employeeId, { id: doc.id, ...data, employeeId });
+      }
+    });
+
+    setAdminPeople(Array.from(uniquePeople.values()));
+  }
+
+  async function savePerson() {
+    if (!personForm.employeeId.trim() || !personForm.name.trim() || !personForm.shift) {
+      setAdminMessage("請填寫工號、姓名與班別");
+      return;
+    }
+    setAdminBusy(true);
+    setAdminMessage("");
+
+    let secondaryApp = null;
+
+    try {
+      const { db } = getFirebaseServices();
+      const employeeId = personForm.employeeId.trim().toUpperCase();
+      const email = employeeIdToEmail(employeeId);
+      const docRef = db.collection("shiftUsers").doc(employeeId);
+
+      // 新增時先檢查正規文件。
+      // 如果人員之前被「移除」，文件會保留但 active=false，
+      // 這時視為重新啟用，不需要重新建立 Firebase Authentication 帳號。
+      if (!editingPersonId) {
+        const existingDoc = await docRef.get();
+        if (existingDoc.exists) {
+          const existingData = existingDoc.data() || {};
+
+          if (existingData.active === false) {
+            await docRef.set({
+              employeeId,
+              name: personForm.name.trim(),
+              shift: personForm.shift,
+              role: existingData.role || "employee",
+              email: existingData.email || email,
+              active: true,
+              updatedAt: new Date(),
+            }, { merge: true });
+
+            setAdminMessage(`工號 ${employeeId} 已重新啟用`);
+            setPersonForm({ employeeId: "", name: "", shift: "A1", password: "" });
+            setEditingPersonId("");
+            await loadAdminPeople();
+            return;
+          }
+
+          setAdminMessage(`工號 ${employeeId} 已存在，請直接按「編輯」。`);
+          return;
+        }
+
+        if (!personForm.password) {
+          setAdminMessage("新增人員請設定初始密碼");
+          return;
+        }
+      }
+
+      const payload = {
+        employeeId,
+        name: personForm.name.trim(),
+        shift: personForm.shift,
+        role: "employee",
+        email,
+        active: true,
+      };
+
+      if (editingPersonId) {
+        await docRef.set(payload, { merge: true });
+        setAdminMessage("人員資料已更新");
+      } else {
+        /*
+         * 用第二個 Firebase App 建立帳號，不會把目前的管理者登出。
+         *
+         * 如果這個 Email 以前已經建立過 Firebase 帳號，
+         * 就用「這次輸入的初始密碼」登入那個既有帳號並取得 UID，
+         * 讓之前建立到一半的人員可以繼續完成建立，而不是直接卡在
+         * auth/email-already-in-use。
+         */
+        const secondaryName = `shiftmate-secondary-${Date.now()}`;
+        secondaryApp = window.firebase.initializeApp(firebaseConfig, secondaryName);
+        const secondaryAuth = secondaryApp.auth();
+
+        let result;
+
+        try {
+          result = await secondaryAuth.createUserWithEmailAndPassword(
+            email,
+            personForm.password
+          );
+        } catch (createError) {
+          if (createError?.code !== "auth/email-already-in-use") {
+            throw createError;
+          }
+
+          try {
+            result = await secondaryAuth.signInWithEmailAndPassword(
+              email,
+              personForm.password
+            );
+          } catch (signInError) {
+            throw new Error(
+              `工號 ${employeeId} 的 Firebase 帳號已存在，但密碼不正確。請到 Firebase Authentication 刪除舊帳號後，再重新新增。`
+            );
+          }
+        }
+
+        payload.uid = result.user.uid;
+        await docRef.set(payload);
+        await secondaryAuth.signOut();
+        setAdminMessage("人員已建立");
+      }
+
+      setPersonForm({ employeeId: "", name: "", shift: "A1", password: "" });
+      setEditingPersonId("");
+      await loadAdminPeople();
+    } catch (error) {
+      console.error("管理人員失敗：", error);
+      setAdminMessage(error?.message || "操作失敗");
+    } finally {
+      if (secondaryApp) {
+        try {
+          await secondaryApp.delete();
+        } catch (cleanupError) {
+          console.warn("清理第二個 Firebase App 失敗：", cleanupError);
+        }
+      }
+      setAdminBusy(false);
+    }
+  }
+
+  function editPerson(person) {
+    setEditingPersonId(person.employeeId);
+    setPersonForm({
+      employeeId: person.employeeId,
+      name: person.name || "",
+      shift: person.shift || "A1",
+      password: "",
+    });
+    setAdminMessage("");
+  }
+
+  async function removePerson(person) {
+    const employeeId = String(person?.employeeId || "").trim().toUpperCase();
+    if (!employeeId) return;
+
+    // 不允許從人員管理刪除目前的管理者帳號。
+    if (employeeId === "ADMIN") {
+      setAdminMessage("管理者帳號不能從這裡移除");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `確定要停用「${employeeId} ${person?.name || ""}」嗎？\n\n停用後，這個工號將無法登入行事曆。\n之後管理者可以用相同工號重新新增／啟用，不需要重新建立 Firebase 帳號。`
+    );
+    if (!confirmed) return;
+
+    setAdminBusy(true);
+    setAdminMessage("");
+
+    try {
+      const { db } = getFirebaseServices();
+
+      // 不刪除 Firebase Authentication，也不刪除 shiftUsers 文件。
+      // 只停用人員，之後可以用同一工號重新啟用。
+      await db.collection("shiftUsers").doc(employeeId).set({
+        active: false,
+        updatedAt: new Date(),
+      }, { merge: true });
+
+      if (editingPersonId === employeeId) {
+        setEditingPersonId("");
+        setPersonForm({ employeeId: "", name: "", shift: "A1", password: "" });
+      }
+
+      setAdminMessage(`已停用人員 ${employeeId}`);
+      await loadAdminPeople();
+    } catch (error) {
+      console.error("停用人員失敗：", error);
+      setAdminMessage(error?.message || "停用失敗");
+    } finally {
+      setAdminBusy(false);
+    }
+  }
+
+  async function saveGlobalEvent() {
+    if (!globalEventForm.date || !globalEventForm.text.trim()) return;
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("globalEvents").doc(globalEventForm.date).set({
+        date: globalEventForm.date,
+        text: globalEventForm.text.trim(),
+        updatedAt: new Date(),
+      });
+      setGlobalEvents((old) => ({ ...old, [globalEventForm.date]: { id: globalEventForm.date, text: globalEventForm.text.trim() } }));
+      setGlobalEventForm({ date: "", text: "" });
+      setAdminMessage("全員行程已儲存");
+    } catch (error) {
+      setAdminMessage(error?.message || "全員行程儲存失敗");
+    }
+  }
+
+  async function deleteGlobalEvent(date) {
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("globalEvents").doc(date).delete();
+      setGlobalEvents((old) => {
+        const next = { ...old };
+        delete next[date];
+        return next;
+      });
+    } catch (error) {
+      setAdminMessage(error?.message || "刪除失敗");
+    }
+  }
+
+  async function saveHolidayOverride() {
+    if (!holidayForm.id || !holidayForm.date || !holidayForm.name.trim()) return;
+    try {
+      const { db } = getFirebaseServices();
+      const id = holidayForm.id;
+      await db.collection("holidayOverrides").doc(id).set({
+        year,
+        date: holidayForm.date,
+        name: holidayForm.name.trim(),
+        enabled: true,
+        updatedAt: new Date(),
+      }, { merge: true });
+      setHolidayOverrides((old) => ({ ...old, [id]: { year, date: holidayForm.date, name: holidayForm.name.trim(), enabled: true } }));
+      setAdminMessage("國定假日已修改");
+    } catch (error) {
+      setAdminMessage(error?.message || "國定假日儲存失敗");
+    }
+  }
+
+  async function disableHoliday(id) {
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("holidayOverrides").doc(id).set({ year, enabled: false, updatedAt: new Date() }, { merge: true });
+      setHolidayOverrides((old) => ({ ...old, [id]: { ...(old[id] || {}), year, enabled: false } }));
+    } catch (error) {
+      setAdminMessage(error?.message || "停用失敗");
+    }
+  }
+
+  async function openAdmin() {
+    setShowAdminPanel(true);
+    setAdminMessage("");
+    if (isAdmin) await loadAdminPeople();
+  }
+
   function renderCell(cell) {
     const key = dateKey(
       cell.date.getFullYear(),
@@ -696,8 +1091,11 @@ export default function App() {
     const status = statusMap[key] || "work";
     const statusInfo = SHIFT_TYPES[status];
     const customText = customEvents[key];
-    const hasLeave = status === "holiday" || isLeaveText(customText);
-    const isOfficialHoliday = Boolean(HOLIDAYS[key]);
+    // 「休」只在使用者實際儲存本月放假後顯示。
+    // 例假日的 × 不再自動變成「休」。
+    const hasLeave = isLeaveText(customText);
+    const officialHoliday = currentHolidayMap[key];
+    const isOfficialHoliday = Boolean(officialHoliday);
 
     return (
       <button
@@ -707,7 +1105,7 @@ export default function App() {
         } ${hasLeave ? "has-leave" : ""}`}
         key={key}
         onClick={() => openCustomInput(cell)}
-        title={isOfficialHoliday ? HOLIDAYS[key] : undefined}
+        title={isOfficialHoliday ? officialHoliday.name : undefined}
       >
         <span className="date-number">{cell.day}</span>
         <span className={`status-symbol ${statusInfo.className}`}>
@@ -720,14 +1118,56 @@ export default function App() {
           customText && <span className="custom-text">{customText}</span>
         )}
 
-        {isOfficialHoliday && (
-          <span className="holiday-label">{HOLIDAYS[key]}</span>
+        {(isOfficialHoliday || globalEvents[key]?.text) && (
+          <span className="holiday-label">
+            {[officialHoliday?.name, globalEvents[key]?.text].filter(Boolean).join("／")}
+          </span>
         )}
 
       </button>
     );
   }
 
+
+  if (!authReady || !firebaseUser) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <div className="brand-icon" aria-hidden="true">▦</div>
+          <h1>輪班行事曆</h1>
+          <p>請輸入工號與密碼登入</p>
+          <form className="employee-login-form" onSubmit={(event) => { event.preventDefault(); if (!loginBusy) loginWithEmployee(); }}>
+            <label>
+              工號
+              <input
+                type="text"
+                value={loginEmployeeId}
+                onChange={(event) => setLoginEmployeeId(event.target.value.toUpperCase())}
+                placeholder="例如 D7445"
+                autoCapitalize="characters"
+                autoComplete="username"
+                autoFocus
+              />
+            </label>
+            <label>
+              密碼
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="請輸入密碼"
+                autoComplete="current-password"
+              />
+            </label>
+            <button className="login-submit-button" type="submit" disabled={loginBusy}>
+              {loginBusy ? "登入中…" : "登入"}
+            </button>
+          </form>
+          {loginError && <div className="login-error">{loginError}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -738,6 +1178,9 @@ export default function App() {
         </div>
 
         <div className="header-actions">
+          {isAdmin && (
+            <button className="admin-button" type="button" onClick={openAdmin}>管理</button>
+          )}
           {firebaseUser ? (
             <button className="login-button" type="button" onClick={logoutFirebase}>
               登出
@@ -756,14 +1199,13 @@ export default function App() {
             <span className="info-icon people-icon" aria-hidden="true">👥</span>
             <div className="info-copy">
               <span className="info-title">班別</span>
-              <button
-                className="shift-value"
-                type="button"
-                aria-label="選擇班別"
-                onClick={openShiftMenu}
-              >
-                {shiftUser?.shift || shift}
-              </button>
+              {isAdmin ? (
+                <button className="shift-value" type="button" onClick={openShiftMenu}>
+                  {shiftUser?.shift || shift}
+                </button>
+              ) : (
+                <strong>{shiftUser?.shift || shift}</strong>
+              )}
             </div>
           </div>
 
@@ -868,6 +1310,126 @@ export default function App() {
 
         </section>
       </main>
+
+
+      {showAdminPanel && isAdmin && (
+        <div className="modal-backdrop admin-backdrop" onClick={() => setShowAdminPanel(false)}>
+          <div className="admin-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="login-modal-header">
+              <div>
+                <h2>管理者</h2>
+                <p>人員、全員行程、國定假日</p>
+              </div>
+              <button className="shift-menu-close" type="button" onClick={() => setShowAdminPanel(false)}>×</button>
+            </div>
+
+            <div className="admin-tabs">
+              {[
+                ["people", "人員管理"],
+                ["global", "全員行程"],
+                ["holiday", "國定假日"],
+              ].map(([key, label]) => (
+                <button key={key} type="button" className={adminTab === key ? "active" : ""} onClick={() => setAdminTab(key)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {adminMessage && <div className="admin-message">{adminMessage}</div>}
+
+            {adminTab === "people" && (
+              <div className="admin-section">
+                <h3>{editingPersonId ? "修改人員" : "新增人員"}</h3>
+                <div className="admin-form-grid">
+                  <input value={personForm.employeeId} disabled={Boolean(editingPersonId)} placeholder="工號" onChange={(e) => setPersonForm({ ...personForm, employeeId: e.target.value.toUpperCase() })} />
+                  <input value={personForm.name} placeholder="姓名" onChange={(e) => setPersonForm({ ...personForm, name: e.target.value })} />
+                  <select value={personForm.shift} onChange={(e) => setPersonForm({ ...personForm, shift: e.target.value })}>
+                    {["A1","A2","A3","B1","B2","B3"].map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                  {!editingPersonId && <input type="password" value={personForm.password} placeholder="初始密碼" onChange={(e) => setPersonForm({ ...personForm, password: e.target.value })} />}
+                </div>
+                <div className="modal-buttons">
+                  {editingPersonId && <button className="cancel-button" type="button" onClick={() => { setEditingPersonId(""); setPersonForm({ employeeId: "", name: "", shift: "A1", password: "" }); }}>取消編輯</button>}
+                  <button className="save-button" type="button" disabled={adminBusy} onClick={savePerson}>{adminBusy ? "處理中…" : editingPersonId ? "儲存修改" : "新增人員"}</button>
+                </div>
+
+                <h3 className="admin-list-title">全部人員</h3>
+                <div className="admin-list">
+                  {adminPeople.map((person) => (
+                    <div className="admin-list-row" key={person.employeeId}>
+                      <div><strong>{person.employeeId}</strong><span>{person.name || ""}</span><em>{person.shift || ""}</em></div>
+                      <div className="admin-row-actions">
+                        <button type="button" onClick={() => editPerson(person)}>編輯</button>
+                        <button
+                          type="button"
+                          className="danger-button"
+                          disabled={adminBusy}
+                          onClick={() => removePerson(person)}
+                        >
+                          停用
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminTab === "global" && (
+              <div className="admin-section">
+                <h3>新增／修改全員行程</h3>
+                <div className="admin-form-grid">
+                  <input type="date" value={globalEventForm.date} onChange={(e) => setGlobalEventForm({ ...globalEventForm, date: e.target.value })} />
+                  <input value={globalEventForm.text} placeholder="例如：歲休、聚餐" onChange={(e) => setGlobalEventForm({ ...globalEventForm, text: e.target.value })} />
+                  <button className="save-button" type="button" onClick={saveGlobalEvent}>儲存</button>
+                </div>
+                <div className="admin-list">
+                  {Object.entries(globalEvents).sort(([a],[b]) => a.localeCompare(b)).map(([date, event]) => (
+                    <div className="admin-list-row" key={date}>
+                      <div><strong>{date}</strong><span>{event.text}</span></div>
+                      <div className="admin-row-actions">
+                        <button type="button" onClick={() => setGlobalEventForm({ date, text: event.text })}>編輯</button>
+                        <button type="button" className="delete-button" onClick={() => deleteGlobalEvent(date)}>刪除</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminTab === "holiday" && (
+              <div className="admin-section">
+                <h3>{year} 年國定假日</h3>
+                <div className="admin-list">
+                  {getSystemHolidayDefinitions(year).map((item) => {
+                    const override = holidayOverrides[item.id];
+                    const effective = currentHolidayMap[item.date] || Object.values(currentHolidayMap).find((x) => x.id === item.id);
+                    const effectiveDate = override?.date || item.date;
+                    const effectiveName = override?.name || item.name;
+                    const disabled = override?.enabled === false;
+                    return (
+                      <div className="admin-list-row" key={item.id}>
+                        <div><strong>{effectiveDate}</strong><span>{effectiveName}{disabled ? "（已停用）" : ""}</span></div>
+                        <div className="admin-row-actions">
+                          <button type="button" onClick={() => { setHolidayForm({ id: item.id, date: effectiveDate, name: effectiveName }); setAdminMessage(""); }}>編輯</button>
+                          <button type="button" className="delete-button" onClick={() => disableHoliday(item.id)}>停用</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {holidayForm.id && (
+                  <div className="admin-edit-box">
+                    <input type="date" value={holidayForm.date} onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })} />
+                    <input value={holidayForm.name} onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })} placeholder="名稱" />
+                    <button className="save-button" type="button" onClick={saveHolidayOverride}>儲存國定假日</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showLoginMenu && (
         <div className="modal-backdrop login-backdrop" onClick={() => setShowLoginMenu(false)}>
