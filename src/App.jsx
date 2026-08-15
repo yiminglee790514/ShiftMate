@@ -817,6 +817,25 @@ export default function App() {
     setShowLeavePicker(false);
   }
 
+  async function copySelectedLeaveSummary() {
+    const days = selectedLeaveDays.join("、") || "無";
+    const text = `${month + 1}月放假${days}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+  }
+
   const isAdmin = shiftUser?.role === "admin" || firebaseUser?.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase();
 
   const currentHolidayMap = useMemo(
@@ -1330,23 +1349,6 @@ export default function App() {
             ))}
           </div>
 
-          <div className="month-leave-summary">
-            <button
-              type="button"
-              className="month-leave-summary-title"
-              onClick={copyMonthLeaveSummary}
-              aria-label="複製本月放假日期"
-            >
-              {month + 1}月份放假：
-            </button>
-            <span>
-              {monthLeaveDays
-                .filter(({ key }) => isLeaveText(customEvents[key]))
-                .map(({ day }) => `${day}號`)
-                .join('、') || '無'}
-            </span>
-          </div>
-
         </section>
       </main>
 
@@ -1618,9 +1620,14 @@ export default function App() {
               })}
             </div>
 
-            <div className="selected-summary">
-              已選：{selectedLeaveDays.length ? selectedLeaveDays.join("、") : "尚未選擇"}
-            </div>
+            <button
+              type="button"
+              className="selected-summary selected-summary-copy"
+              onClick={copySelectedLeaveSummary}
+              aria-label="複製本月放假日期"
+            >
+              {month + 1}月放假{selectedLeaveDays.length ? selectedLeaveDays.join("、") : "無"}
+            </button>
 
             <div className="modal-buttons">
               <button className="cancel-button" onClick={() => setShowLeavePicker(false)} type="button">取消</button>

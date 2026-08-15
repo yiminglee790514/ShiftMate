@@ -720,6 +720,15 @@ input {
   font-size: 14px;
 }
 
+.selected-summary-copy {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .modal-buttons {
   display: flex;
   justify-content: flex-end;
