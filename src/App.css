@@ -741,6 +741,7 @@ input {
   .app {
     /* 手機版整體往上 12px；保留 safe-area，避免碰到動態島 */
     padding-top: env(safe-area-inset-top, 0px);
+    transform: translateY(-6px);
   }
 
   .top-header {
@@ -934,8 +935,8 @@ input {
   }
 
   .leave-text {
-    font-size: 14px;
-    font-weight: 400;
+    font-size: 15px;
+    font-weight: 700;
   }
 
   .custom-text {
