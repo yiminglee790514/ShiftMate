@@ -910,7 +910,7 @@ input {
   }
 
   .leave-text {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 400;
   }
 
@@ -930,17 +930,19 @@ input {
     display: none;
   }
 
+  /* 手機版班別視窗：真正置中，不再貼在底部 */
   .shift-menu-backdrop {
-    align-items: flex-end;
-    padding: 8px;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
   }
 
-  /* 手機版班別視窗往上移一點，避免整個視窗貼在底部 */
   .shift-menu {
     width: 100%;
-    border-radius: 18px 18px 12px 12px;
+    max-width: 520px;
+    border-radius: 18px;
     padding: 18px;
-    transform: translateY(-120px);
+    transform: none;
   }
 
   .shift-options {
@@ -968,9 +970,11 @@ input {
     justify-content: flex-start;
   }
 
+  /* 手機版一般 Modal：置中顯示 */
   .modal-backdrop {
-    align-items: flex-end;
-    padding: 10px 8px max(8px, env(safe-area-inset-bottom, 0px));
+    align-items: center;
+    justify-content: center;
+    padding: 16px 8px max(16px, env(safe-area-inset-bottom, 0px));
   }
 
   .input-modal,
@@ -982,9 +986,9 @@ input {
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
   }
 
-  /* 手機版本月放假視窗往上移一點，不要整個貼到底部 */
+  /* 手機版月放假視窗：跟著 backdrop 置中 */
   .leave-modal {
-    transform: translateY(-100px);
+    transform: none;
   }
 
   .leave-modal {
