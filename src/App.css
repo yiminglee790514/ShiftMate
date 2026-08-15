@@ -910,7 +910,7 @@ input {
   }
 
   .leave-text {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
   }
 
@@ -1343,10 +1343,96 @@ input {
 
 @media (max-width:700px) {
   .admin-button { min-width:58px; height:36px; font-size:13px; }
-  .admin-modal { width:100%; max-height:calc(100dvh - 16px); border-radius:20px 20px 12px 12px; padding:18px; }
-  .admin-form-grid { grid-template-columns:1fr; }
-  .admin-edit-box { grid-template-columns:1fr; }
-  .admin-list-row > div:first-child { flex-wrap:wrap; gap:7px; }
+
+  /* 手機版管理者視窗：縮短垂直間距，讓「全部人員」在第一眼就能看到 */
+  .admin-modal {
+    width:100%;
+    max-height:calc(100dvh - 24px);
+    border-radius:20px 20px 12px 12px;
+    padding:14px 16px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+
+  .admin-modal .login-modal-header {
+    gap:8px;
+  }
+
+  .admin-modal .login-modal-header h2 {
+    font-size:30px;
+    line-height:1.15;
+  }
+
+  .admin-modal .login-modal-header p {
+    margin-top:3px;
+    font-size:12px;
+  }
+
+  .admin-tabs {
+    gap:5px;
+    margin:10px 0 12px;
+    padding:3px;
+  }
+
+  .admin-tabs button {
+    min-height:38px;
+    font-size:14px;
+  }
+
+  .admin-form-grid {
+    grid-template-columns:1fr;
+    gap:7px;
+  }
+
+  .admin-form-grid input,
+  .admin-form-grid select {
+    min-height:44px;
+    height:44px;
+  }
+
+  .admin-section h3 {
+    margin:6px 0 8px;
+    font-size:24px;
+  }
+
+  .admin-section .modal-buttons {
+    margin-top:10px;
+  }
+
+  .admin-section .modal-buttons button {
+    min-height:44px;
+  }
+
+  .admin-list-title {
+    margin-top:12px !important;
+    margin-bottom:8px !important;
+  }
+
+  .admin-list {
+    max-height:220px;
+    gap:6px;
+  }
+
+  .admin-list-row {
+    min-height:46px;
+    padding:6px 8px;
+  }
+
+  .admin-list-row > div:first-child {
+    flex-wrap:wrap;
+    gap:6px;
+  }
+
+  .admin-list-row button {
+    min-height:34px;
+    padding:0 8px;
+    font-size:13px;
+  }
+
+  .admin-row-actions {
+    gap:5px;
+  }
+
   .login-page { padding:16px; }
   .login-card { padding:24px 20px; }
 }
