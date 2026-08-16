@@ -1148,6 +1148,111 @@ input {
 }
 
 /* =========================
+   超小螢幕 / 手錶版
+   只在非常窄的螢幕啟用，不影響一般手機版
+   ========================= */
+@media (max-width: 320px) {
+  /* 日曆：縮小日期與班別符號，避免兩位數日期和符號黏在一起 */
+  .calendar-cell {
+    padding: 3px;
+  }
+
+  .date-number {
+    top: 3px;
+    left: 4px;
+    font-size: 13px;
+  }
+
+  .status-symbol {
+    top: 3px;
+    right: 3px;
+    width: 16px;
+    height: 16px;
+    font-size: 13px;
+  }
+
+  .status-symbol.off {
+    font-size: 13px;
+  }
+
+  .status-symbol.rest {
+    font-size: 14px;
+  }
+
+  .status-symbol.holiday {
+    font-size: 15px;
+  }
+
+  /* 手錶：本月放假視窗改成真正可操作的緊湊版 */
+  .modal-backdrop {
+    padding: 6px;
+  }
+
+  .leave-modal {
+    width: calc(100vw - 12px);
+    max-width: none;
+    max-height: calc(100dvh - 12px);
+    padding: 12px;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .leave-modal h2 {
+    margin-bottom: 4px;
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .leave-modal .modal-description {
+    margin-bottom: 8px;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .leave-day-grid {
+    flex: 1 1 auto;
+    grid-auto-rows: 30px;
+    gap: 3px;
+    padding: 1px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .leave-day {
+    min-height: 30px;
+    height: 30px;
+    border-radius: 7px;
+    font-size: 12px;
+  }
+
+  .leave-day b {
+    bottom: 1px;
+    font-size: 8px;
+  }
+
+  .leave-modal .selected-summary {
+    margin-top: 7px;
+    padding: 7px 9px;
+    font-size: 10px;
+    line-height: 1.3;
+    min-height: 28px;
+  }
+
+  .leave-modal .modal-buttons {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .leave-modal .modal-buttons button {
+    min-height: 34px;
+    height: 34px;
+    border-radius: 8px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+}
+
+/* =========================
    Firebase Login
    ========================= */
 .login-modal {
