@@ -31,3 +31,11 @@ If you are developing a production application, we recommend using TypeScript wi
 請將 `.env.example` 複製成 `.env.local`，填入 Firebase Console 的 Web App 設定，以及你已建立的 Firebase Email/Password 帳號所使用的 Email 網域。
 
 注意：不要把 Firebase Admin SDK 私密金鑰放進前端。
+
+
+## AI 排班 API 金鑰輪替
+後端會依序讀取 `GEMINI_API_KEY`、`GEMINI_API_KEY_2`、`GEMINI_API_KEY_3` ...，目前最多支援 20 組。
+遇到 quota / rate limit 時會自動換下一組。
+
+## AI 排班標記
+目前辨識：`休`、`半`、`K12`、`工程`。同一格如果同時出現多個指定標記，會全部保留，例如 `半/K12`。

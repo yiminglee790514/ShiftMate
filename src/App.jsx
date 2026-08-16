@@ -484,6 +484,16 @@ export default function App() {
   const [globalEventForm, setGlobalEventForm] = useState({ date: "", text: "" });
   const [holidayForm, setHolidayForm] = useState({ id: "", date: "", name: "" });
 
+  // 管理者：AI 排班圖片辨識（第一階段只辨識，不寫入員工行事曆）
+  const [aiShiftFile, setAiShiftFile] = useState(null);
+  const [aiShiftPreview, setAiShiftPreview] = useState("");
+  const [aiShiftResults, setAiShiftResults] = useState(null);
+  const [aiShiftBusy, setAiShiftBusy] = useState(false);
+  const [aiShiftError, setAiShiftError] = useState("");
+  const [aiPublishEmployeeId, setAiPublishEmployeeId] = useState("");
+  const [aiPublishBusy, setAiPublishBusy] = useState(false);
+  const [aiPublishMessage, setAiPublishMessage] = useState("");
+
   useEffect(() => {
     let unsubscribe = null;
 
@@ -510,6 +520,37 @@ export default function App() {
           if (!profile && user.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase()) {
             profile = { employeeId: "Admin", name: "管理者", role: "admin", shift: "" };
           }
+
+          // 每位員工第一次登入時，自動把目前 Firebase Auth UID
+          // 同步回 shiftUsers/{工號}。
+          //
+          // 這是為了讓管理者之後可以用「工號 → UID」安全地把
+          // AI 辨識結果發布到正確員工的 users/{uid} 行事曆。
+          // 只同步「目前登入者自己的 UID」，不會替其他員工寫入 UID。
+          if (
+            profile?.employeeId &&
+            profile.employeeId !== "Admin" &&
+            user?.uid &&
+            user?.email &&
+            user.email.toLowerCase() === employeeIdToEmail(profile.employeeId).toLowerCase()
+          ) {
+            try {
+              if (profile.uid !== user.uid) {
+                await db.collection("shiftUsers").doc(profile.employeeId).set(
+                  {
+                    uid: user.uid,
+                    updatedAt: new Date(),
+                  },
+                  { merge: true }
+                );
+                profile = { ...profile, uid: user.uid };
+              }
+            } catch (uidSyncError) {
+              // UID 同步失敗不阻止員工登入；管理者之後仍可在系統中看到錯誤。
+              console.warn("同步員工 Firebase UID 失敗：", uidSyncError);
+            }
+          }
+
           if (profile?.active === false) {
             await auth.signOut();
             setShiftUser(null);
@@ -833,6 +874,424 @@ export default function App() {
       textarea.select();
       document.execCommand("copy");
       textarea.remove();
+    }
+  }
+
+
+  function resetAiShiftImport() {
+    setAiShiftFile(null);
+    setAiShiftPreview("");
+    setAiShiftResults(null);
+    setAiShiftError("");
+  }
+
+  function handleAiShiftFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAiShiftError("請上傳 JPG、PNG 或其他圖片檔案。");
+      return;
+    }
+
+    if (file.size > 12 * 1024 * 1024) {
+      setAiShiftError("圖片太大，請使用 12MB 以下的圖片。");
+      return;
+    }
+
+    setAiShiftError("");
+    setAiShiftResults(null);
+    setAiShiftFile(file);
+
+    const reader = new FileReader();
+    reader.onload = () => setAiShiftPreview(String(reader.result || ""));
+    reader.onerror = () => setAiShiftError("圖片讀取失敗，請重新選擇。");
+    reader.readAsDataURL(file);
+  }
+
+  function loadImageForAi(src) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("圖片載入失敗，無法進行 AI 分列。"));
+      image.src = src;
+    });
+  }
+
+  async function cropAiImage(src, crop) {
+    const image = await loadImageForAi(src);
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+
+    const x = Math.max(0, Math.floor(crop.x || 0));
+    const y = Math.max(0, Math.floor(crop.y || 0));
+    const width = Math.min(sourceWidth - x, Math.max(1, Math.floor(crop.width)));
+    const height = Math.min(sourceHeight - y, Math.max(1, Math.floor(crop.height)));
+    const scale = Math.min(4, Math.max(1, 1800 / Math.max(width, height)));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+
+    const context = canvas.getContext("2d", { alpha: false });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL("image/jpeg", 0.94);
+  }
+
+  async function runAiShiftRecognition() {
+    if (!aiShiftPreview) {
+      setAiShiftError("請先上傳排班圖片。");
+      return;
+    }
+
+    setAiShiftBusy(true);
+    setAiShiftError("");
+    setAiShiftResults(null);
+
+    try {
+      const knownEmployees = adminPeople.map((person) => ({
+        employeeId: String(person.employeeId || "").trim().toUpperCase(),
+        name: person.name || "",
+      })).filter((person) => person.employeeId);
+
+      if (!knownEmployees.length) {
+        throw new Error("系統目前沒有可比對的員工資料。");
+      }
+
+      // 這版刻意只允許最多 2 次 Gemini request：
+      // ① 整張圖片一次辨識所有系統員工
+      // ② 整張圖片一次重新校對第一次結果
+      // 不做分批、不做逐員工 API 呼叫，也不自動 retry，避免吃掉 Gemini quota。
+      const requestGemini = async (mode, extra = {}) => {
+        const response = await fetch("/api/ai-shift-import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+          body: JSON.stringify({
+            mode,
+            image: aiShiftPreview,
+            knownEmployees,
+            year: String(year),
+            month: String(month + 1),
+            ...extra,
+          }),
+        });
+
+        const raw = await response.text();
+        let data = {};
+        try { data = JSON.parse(raw); } catch { data = {}; }
+        if (!response.ok) {
+          throw new Error(data?.error || `AI 辨識失敗（${response.status}）`);
+        }
+        return data;
+      };
+
+      // 第 1 次：整張表一次辨識，只接受系統內工號。
+      const first = await requestGemini("recognizeAll");
+
+      if (!Array.isArray(first?.employees)) {
+        throw new Error("AI 第一次辨識沒有回傳有效結果。");
+      }
+
+      // 第 2 次：把第一次結果交給 Gemini，要求依原圖逐列重新核對。
+      const second = await requestGemini("verifyAll", {
+        firstResult: first.employees,
+      });
+
+      const knownById = new Map(
+        knownEmployees.map((person) => [person.employeeId, person])
+      );
+
+      // 第二階段優先，但如果第二階段漏掉某個系統員工，保留第一階段該員工結果。
+      const firstById = new Map(
+        (Array.isArray(first?.employees) ? first.employees : [])
+          .map((employee) => [String(employee?.employeeId || "").trim().toUpperCase(), employee])
+          .filter(([id]) => id)
+      );
+      const secondById = new Map(
+        (Array.isArray(second?.employees) ? second.employees : [])
+          .map((employee) => [String(employee?.employeeId || "").trim().toUpperCase(), employee])
+          .filter(([id]) => id)
+      );
+      const mergedIds = new Set([...firstById.keys(), ...secondById.keys()]);
+      const rawEmployees = Array.from(mergedIds).map((employeeId) => {
+        const secondEmployee = secondById.get(employeeId);
+        const firstEmployee = firstById.get(employeeId);
+        // 第二階段有資料就優先；完全漏掉才使用第一階段。
+        return secondEmployee || firstEmployee;
+      });
+
+      const employees = rawEmployees
+        .map((employee) => {
+          const employeeId = String(employee?.employeeId || "").trim().toUpperCase();
+          const person = knownById.get(employeeId);
+          if (!person) return null;
+
+          const days = (Array.isArray(employee?.days) ? employee.days : [])
+            .map((day) => {
+              const rawType = String(day?.type || "").trim();
+              const rawMarker = String(day?.marker || "").trim();
+              const rawMarkers = Array.isArray(day?.markers) ? day.markers : [];
+              const markerText = [rawMarker, ...rawMarkers]
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+                .join("/");
+
+              if (!day?.date) return null;
+
+              const hasHalf = rawType === "半" || rawType === "半天" || markerText.includes("半");
+              const hasK12 = rawType.includes("K12") || markerText.includes("K12");
+              const hasEngineering = rawType.includes("工程") || markerText.includes("工程");
+              const hasOff = rawType === "休" || markerText.includes("休");
+
+              const markers = [];
+              if (hasHalf) markers.push("半天");
+              if (hasK12) markers.push("K12");
+              if (hasEngineering) markers.push("工程");
+
+              if (markers.length) {
+                return {
+                  date: String(day.date),
+                  type: "特殊",
+                  marker: markers.join("/"),
+                };
+              }
+
+              if (hasOff) {
+                return { date: String(day.date), type: "休", marker: "休" };
+              }
+
+              return null;
+            })
+            .filter(Boolean);
+
+          return {
+            employeeId,
+            name: person.name || employee.name || "",
+            matched: true,
+            days,
+          };
+        })
+        .filter(Boolean)
+        .filter((employee) => employee.days.length > 0);
+
+      // 依系統員工順序排列，方便你逐人確認。
+      employees.sort((a, b) => {
+        const ai = knownEmployees.findIndex((person) => person.employeeId === a.employeeId);
+        const bi = knownEmployees.findIndex((person) => person.employeeId === b.employeeId);
+        return ai - bi;
+      });
+
+      const warnings = [];
+      (Array.isArray(first?.warnings) ? first.warnings : []).forEach((item) => warnings.push(String(item)));
+      (Array.isArray(second?.warnings) ? second.warnings : []).forEach((item) => warnings.push(String(item)));
+
+      setAiShiftResults({
+        year: String(year),
+        month: String(month + 1),
+        employees,
+        warnings,
+        recognitionMode: "整張圖片兩階段辨識",
+      });
+    } catch (error) {
+      console.error("AI 排班辨識失敗：", error);
+      setAiShiftError(error?.message || "AI 辨識失敗，請稍後再試。");
+    } finally {
+      setAiShiftBusy(false);
+    }
+  }
+
+  async function publishAiShiftEmployee() {
+    const employeeId = String(aiPublishEmployeeId || "").trim().toUpperCase();
+    if (!employeeId) {
+      setAiPublishMessage("請先選擇要發布的員工。");
+      return;
+    }
+
+    const employee = Array.isArray(aiShiftResults?.employees)
+      ? aiShiftResults.employees.find(
+          (item) => String(item?.employeeId || "").trim().toUpperCase() === employeeId
+        )
+      : null;
+
+    if (!employee) {
+      setAiPublishMessage("找不到這位員工的 AI 辨識結果。");
+      return;
+    }
+
+    const person = adminPeople.find(
+      (item) => String(item?.employeeId || "").trim().toUpperCase() === employeeId
+    );
+
+    const currentLoginEmployeeId = String(
+      firebaseUser?.email?.split("@")[0] || ""
+    ).trim().toUpperCase();
+
+    const targetUid =
+      person?.uid ||
+      (
+        firebaseUser?.uid &&
+        currentLoginEmployeeId === employeeId
+          ? firebaseUser.uid
+          : ""
+      );
+
+    if (!targetUid) {
+      setAiPublishMessage(
+        `工號 ${employeeId} 目前沒有 Firebase UID，無法發布。請先讓該員工登入一次行事曆。`
+      );
+      return;
+    }
+
+    const days = Array.isArray(employee.days)
+      ? employee.days.filter((day) => day?.date)
+      : [];
+
+    if (!days.length) {
+      setAiPublishMessage(`${employeeId} 沒有可發布的日期。`);
+      return;
+    }
+
+    setAiPublishBusy(true);
+    setAiPublishMessage("");
+
+    try {
+      const { db } = getFirebaseServices();
+      const userRef = db.collection("users").doc(targetUid);
+      const userSnapshot = await userRef.get();
+      const existingData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+      const nextEvents = {
+        ...(existingData.customEvents && typeof existingData.customEvents === "object"
+          ? existingData.customEvents
+          : {}),
+      };
+
+      days.forEach((day) => {
+        const type = String(day.type || "").trim();
+        const marker = String(day.marker || "").trim();
+        const value = type === "特殊" ? (marker || "特殊") : (type || "休");
+        nextEvents[String(day.date)] = value;
+      });
+
+      await userRef.set(
+        {
+          customEvents: nextEvents,
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
+
+      setAiPublishMessage(
+        `發布成功：${employeeId} ${employee.name || ""}，已寫入 ${days.length} 筆行事曆資料。`
+      );
+    } catch (error) {
+      console.error("AI 排班指定員工發布失敗：", error);
+      setAiPublishMessage(error?.message || "發布失敗，請稍後再試。");
+    } finally {
+      setAiPublishBusy(false);
+    }
+  }
+
+  async function publishAiShiftAll() {
+    const employees = Array.isArray(aiShiftResults?.employees)
+      ? aiShiftResults.employees.filter((item) => item?.employeeId)
+      : [];
+
+    if (!employees.length) {
+      setAiPublishMessage("目前沒有可發布的 AI 辨識結果。");
+      return;
+    }
+
+    setAiPublishBusy(true);
+    setAiPublishMessage("");
+
+    try {
+      const { db } = getFirebaseServices();
+      const publishResults = [];
+      const failedResults = [];
+
+      for (const employee of employees) {
+        const employeeId = String(employee.employeeId || "").trim().toUpperCase();
+        const person = adminPeople.find(
+          (item) =>
+            String(item?.employeeId || "").trim().toUpperCase() === employeeId
+        );
+
+        const currentLoginEmployeeId = String(
+          firebaseUser?.email?.split("@")[0] || ""
+        ).trim().toUpperCase();
+
+        const targetUid =
+          person?.uid ||
+          (
+            firebaseUser?.uid &&
+            currentLoginEmployeeId === employeeId
+              ? firebaseUser.uid
+              : ""
+          );
+
+        const days = Array.isArray(employee.days)
+          ? employee.days.filter((day) => day?.date)
+          : [];
+
+        if (!targetUid) {
+          failedResults.push(`${employeeId}：沒有 Firebase UID`);
+          continue;
+        }
+
+        if (!days.length) {
+          failedResults.push(`${employeeId}：沒有可發布的日期`);
+          continue;
+        }
+
+        try {
+          const userRef = db.collection("users").doc(targetUid);
+          const userSnapshot = await userRef.get();
+          const existingData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+          const nextEvents = {
+            ...(existingData.customEvents && typeof existingData.customEvents === "object"
+              ? existingData.customEvents
+              : {}),
+          };
+
+          days.forEach((day) => {
+            const type = String(day.type || "").trim();
+            const marker = String(day.marker || "").trim();
+            const value = type === "特殊" ? (marker || "特殊") : (type || "休");
+            nextEvents[String(day.date)] = value;
+          });
+
+          await userRef.set(
+            {
+              customEvents: nextEvents,
+              updatedAt: new Date(),
+            },
+            { merge: true }
+          );
+
+          publishResults.push(`${employeeId} ${employee.name || ""}：${days.length} 筆`);
+        } catch (error) {
+          console.error(`AI 排班發布失敗：${employeeId}`, error);
+          failedResults.push(`${employeeId}：${error?.message || "寫入失敗"}`);
+        }
+      }
+
+      if (failedResults.length) {
+        setAiPublishMessage(
+          `已發布 ${publishResults.length} 位；失敗 ${failedResults.length} 位：${failedResults.join("、")}`
+        );
+      } else {
+        setAiPublishMessage(
+          `全部發布成功：${publishResults.length} 位員工，共完成 AI 排班寫入。`
+        );
+      }
+    } catch (error) {
+      console.error("AI 排班全部發布失敗：", error);
+      setAiPublishMessage(error?.message || "全部發布失敗，請稍後再試。");
+    } finally {
+      setAiPublishBusy(false);
     }
   }
 
@@ -1369,6 +1828,7 @@ export default function App() {
                 ["people", "人員管理"],
                 ["global", "全員行程"],
                 ["holiday", "國定假日"],
+                ["aiShift", "AI排班"],
               ].map(([key, label]) => (
                 <button key={key} type="button" className={adminTab === key ? "active" : ""} onClick={() => setAdminTab(key)}>
                   {label}
@@ -1435,6 +1895,173 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+
+            {adminTab === "aiShift" && (
+              <div className="admin-section ai-shift-section">
+                <h3>AI 排班圖片辨識</h3>
+                <p className="ai-shift-help">
+                  上傳排班表後，Gemini 只先辨識「工號、日期、休、半、K12、工程」。
+                  <strong>這一階段不會寫入任何員工行事曆。</strong>
+                </p>
+
+                <div className="ai-shift-upload-box">
+                  <input
+                    id="ai-shift-image-input"
+                    className="ai-shift-file-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAiShiftFile}
+                  />
+                  <label className="ai-shift-upload-button" htmlFor="ai-shift-image-input">
+                    {aiShiftFile ? "重新選擇排班圖片" : "選擇排班圖片"}
+                  </label>
+                  {aiShiftFile && (
+                    <span className="ai-shift-file-name">{aiShiftFile.name}</span>
+                  )}
+                </div>
+
+                {aiShiftPreview && (
+                  <div className="ai-shift-preview">
+                    <img src={aiShiftPreview} alt="排班表預覽" />
+                  </div>
+                )}
+
+                {aiShiftError && <div className="ai-shift-error">{aiShiftError}</div>}
+
+                <div className="modal-buttons ai-shift-actions">
+                  <button
+                    className="cancel-button"
+                    type="button"
+                    onClick={resetAiShiftImport}
+                    disabled={aiShiftBusy}
+                  >
+                    清除
+                  </button>
+                  <button
+                    className="save-button"
+                    type="button"
+                    onClick={runAiShiftRecognition}
+                    disabled={aiShiftBusy || !aiShiftPreview}
+                  >
+                    {aiShiftBusy ? "Gemini 辨識中…" : "開始 AI 辨識"}
+                  </button>
+                </div>
+
+                {aiShiftResults && (
+                  <div className="ai-shift-results">
+                    <div className="ai-shift-result-header">
+                      <div>
+                        <h3>辨識結果</h3>
+                        <p>
+                          {aiShiftResults.year && aiShiftResults.month
+                            ? `${aiShiftResults.year} 年 ${aiShiftResults.month} 月`
+                            : "月份由圖片辨識"}
+                        </p>
+                      </div>
+                      <span>
+                        {Array.isArray(aiShiftResults.employees)
+                          ? `${aiShiftResults.employees.length} 位`
+                          : "—"}
+                      </span>
+                    </div>
+
+                    <div className="ai-shift-publish-test">
+                      <div className="ai-shift-publish-title">發布</div>
+                      <div className="ai-shift-publish-row">
+                        <select
+                          value={aiPublishEmployeeId}
+                          onChange={(event) => {
+                            setAiPublishEmployeeId(event.target.value);
+                            setAiPublishMessage("");
+                          }}
+                          disabled={aiPublishBusy}
+                        >
+                          <option value="">選擇要發布的員工</option>
+                          {aiShiftResults.employees.map((employee) => (
+                            <option key={employee.employeeId} value={employee.employeeId}>
+                              {employee.employeeId} {employee.name || ""}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="ai-shift-publish-button"
+                          onClick={publishAiShiftEmployee}
+                          disabled={aiPublishBusy || !aiPublishEmployeeId}
+                        >
+                          {aiPublishBusy ? "發布中…" : "發布指定"}
+                        </button>
+                        <button
+                          type="button"
+                          className="ai-shift-publish-button ai-shift-publish-all-button"
+                          onClick={publishAiShiftAll}
+                          disabled={aiPublishBusy || !aiShiftResults.employees.length}
+                        >
+                          {aiPublishBusy ? "發布中…" : "發布全部"}
+                        </button>
+                      </div>
+                      {aiPublishMessage && (
+                        <div className={`ai-shift-publish-message ${aiPublishMessage.includes("成功") ? "success" : "error"}`}>
+                          {aiPublishMessage}
+                        </div>
+                      )}
+                    </div>
+
+                    {Array.isArray(aiShiftResults.employees) && aiShiftResults.employees.length > 0 ? (
+                      <div className="ai-shift-result-list">
+                        {aiShiftResults.employees.map((employee, index) => (
+                          <div
+                            className="ai-shift-result-card"
+                            key={`${employee.employeeId || "unknown"}-${index}`}
+                          >
+                            <div className="ai-shift-person">
+                              <strong>{employee.employeeId || "未辨識工號"}</strong>
+                              <span>{employee.name || "未配對姓名"}</span>
+                              {employee.matched === false && <em>系統找不到此工號</em>}
+                            </div>
+
+                            <div className="ai-shift-day-results">
+                              {Array.isArray(employee.days) && employee.days.length > 0 ? (
+                                employee.days.map((day, dayIndex) => (
+                                  <div
+                                    className={`ai-shift-day-result ${day.type === "半天" || day.type === "特殊" ? "half" : "off"}`}
+                                    key={`${day.date || "unknown"}-${dayIndex}`}
+                                  >
+                                    <strong>{day.date || "日期不明"}</strong>
+                                    <span>{day.type || "休"}</span>
+                                    {day.marker && <small>{day.marker}</small>}
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="ai-shift-empty">沒有抓到指定標記</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="ai-shift-empty">這張圖片沒有辨識到符合目前規則的資料。</div>
+                    )}
+
+                    {Array.isArray(aiShiftResults.warnings) && aiShiftResults.warnings.length > 0 && (
+                      <div className="ai-shift-warnings">
+                        <strong>需要注意</strong>
+                        <ul>
+                          {aiShiftResults.warnings.map((warning, index) => (
+                            <li key={index}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="ai-shift-safe-note">
+                      AI 辨識結果不會自動寫入。請先確認辨識結果，確認無誤後可直接「發布指定」或「發布全部」。按下發布後會立即寫入行事曆。
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

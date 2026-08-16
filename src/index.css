@@ -28,3 +28,50 @@ input,
 select {
   font-family: inherit;
 }
+
+
+/* AI 發布測試 */
+.ai-shift-publish-test {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d9e4f5;
+  border-radius: 12px;
+  background: #f7faff;
+}
+.ai-shift-publish-title {
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+.ai-shift-publish-test p {
+  margin: 0 0 10px;
+  color: #667085;
+  font-size: 13px;
+}
+.ai-shift-publish-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ai-shift-publish-row select {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid #d7dfeb;
+  border-radius: 9px;
+  background: #fff;
+}
+.ai-shift-publish-message {
+  margin-top: 9px;
+  font-size: 13px;
+  color: #2459a6;
+}
+@media (max-width: 600px) {
+  .ai-shift-publish-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ai-shift-publish-row .save-button {
+    width: 100%;
+  }
+}

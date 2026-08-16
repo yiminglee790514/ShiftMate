@@ -21,8 +21,19 @@ service cloud.firestore {
         request.auth.token.email.split("@")[0].lower() == employeeId.lower()
       );
 
-      // 新增、修改、移除人員只能由管理者執行。
-      allow create, update, delete: if isAdmin();
+      // 新增、一般修改、移除人員只能由管理者執行。
+      allow create, delete: if isAdmin();
+
+      // 員工第一次登入時，只能把「自己的 Firebase Auth UID」
+      // 同步到自己的 shiftUsers/{工號} 文件。
+      // 不允許員工修改姓名、班別、角色、啟用狀態等管理資料。
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        request.auth.token.email != null &&
+        request.auth.token.email.split("@")[0].lower() == employeeId.lower() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["uid", "updatedAt"]) &&
+        request.resource.data.uid == request.auth.uid
+      );
     }
 
     match /users/{userId} {
