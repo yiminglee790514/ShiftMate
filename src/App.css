@@ -1183,7 +1183,7 @@ input {
     font-size: 15px;
   }
 
-  /* 手錶：本月放假視窗改成真正可操作的緊湊版 */
+  /* 手錶：本月放假視窗只保留日期編輯區與操作按鈕 */
   .modal-backdrop {
     padding: 6px;
   }
@@ -1191,64 +1191,62 @@ input {
   .leave-modal {
     width: calc(100vw - 12px);
     max-width: none;
+    height: calc(100dvh - 12px);
     max-height: calc(100dvh - 12px);
-    padding: 12px;
+    padding: 8px;
     border-radius: 14px;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  .leave-modal h2 {
-    margin-bottom: 4px;
-    font-size: 19px;
-    line-height: 1.25;
-  }
-
+  /* 手錶畫面空間有限，拿掉上方標題/說明 */
+  .leave-modal h2,
   .leave-modal .modal-description {
-    margin-bottom: 8px;
-    font-size: 11px;
-    line-height: 1.45;
+    display: none;
   }
 
+  /* 日期區盡量吃滿可用高度，可上下捲動 */
   .leave-day-grid {
     flex: 1 1 auto;
+    min-height: 0;
     grid-auto-rows: 30px;
     gap: 3px;
     padding: 1px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
   }
 
   .leave-day {
     min-height: 30px;
     height: 30px;
     border-radius: 7px;
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .leave-day b {
     bottom: 1px;
-    font-size: 8px;
+    font-size: 7px;
   }
 
+  /* 手錶畫面空間有限，拿掉下方放假摘要 */
   .leave-modal .selected-summary {
-    margin-top: 7px;
-    padding: 7px 9px;
-    font-size: 10px;
-    line-height: 1.3;
-    min-height: 28px;
+    display: none;
   }
 
   .leave-modal .modal-buttons {
+    flex: 0 0 auto;
     gap: 6px;
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   .leave-modal .modal-buttons button {
-    min-height: 34px;
-    height: 34px;
+    min-height: 32px;
+    height: 32px;
     border-radius: 8px;
     padding: 0 6px;
-    font-size: 12px;
+    font-size: 11px;
   }
 }
 
