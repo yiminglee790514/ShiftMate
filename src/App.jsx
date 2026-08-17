@@ -460,6 +460,8 @@ export default function App() {
   // 自訂內容：
   // K12 / 體檢 / 半天 / 休 都可以直接輸入。
   const [customEvents, setCustomEvents] = useState({});
+  // 使用者明確刪除的自訂行程日期，避免舊的雲端資料在重新整理時重新出現。
+  const [deletedCustomEventDates, setDeletedCustomEventDates] = useState([]);
   // AI 發布休假後的提示時間與月份。只有該月份有 AI 帶入休假時才顯示。
   const [aiLeaveImportedAt, setAiLeaveImportedAt] = useState(null);
   const [aiLeaveImportedMonth, setAiLeaveImportedMonth] = useState("");
@@ -584,11 +586,20 @@ export default function App() {
           // 從 Firebase 載入這個帳號之前儲存的行事曆自訂內容。
           const calendarDoc = await db.collection("users").doc(user.uid).get();
           const calendarData = calendarDoc.exists ? calendarDoc.data() : {};
-          setCustomEvents(
+          const storedCustomEvents =
             calendarData?.customEvents && typeof calendarData.customEvents === "object"
               ? calendarData.customEvents
-              : {}
+              : {};
+          const deletedCustomEventDates = Array.isArray(calendarData?.deletedCustomEventDates)
+            ? calendarData.deletedCustomEventDates.map((value) => String(value))
+            : [];
+          const deletedSet = new Set(deletedCustomEventDates);
+          const cleanedCustomEvents = Object.fromEntries(
+            Object.entries(storedCustomEvents).filter(([date]) => !deletedSet.has(date))
           );
+
+          setCustomEvents(cleanedCustomEvents);
+          setDeletedCustomEventDates(deletedCustomEventDates);
           setAiLeaveImportedAt(calendarData?.aiLeaveImportedAt || null);
           setAiLeaveImportedMonth(String(calendarData?.aiLeaveImportedMonth || ""));
           setCustomEventsLoaded(true);
@@ -822,25 +833,37 @@ export default function App() {
     setMonth(current.getMonth());
   }
 
-  async function saveCustomEventsToFirebase(nextEvents) {
+  async function saveCustomEventsToFirebase(nextEvents, nextDeletedDates = null) {
     if (!firebaseUser?.uid || !customEventsLoaded) return;
 
     try {
       const { db } = getFirebaseServices();
+      const payload = {
+        customEvents: nextEvents,
+        updatedAt: new Date(),
+      };
+
+      if (Array.isArray(nextDeletedDates)) {
+        payload.deletedCustomEventDates = [
+          ...new Set(nextDeletedDates.map((value) => String(value))),
+        ];
+      }
+
       await db.collection("users").doc(firebaseUser.uid).set(
-        {
-          customEvents: nextEvents,
-          updatedAt: new Date(),
-        },
+        payload,
         { merge: true }
       );
     } catch (error) {
       console.error("儲存行事曆失敗：", error);
-      // Firebase 暫時無法寫入時，仍保留在瀏覽器，避免使用者當下編輯內容消失。
       try {
         localStorage.setItem(
           `shiftmate_customEvents_${firebaseUser.uid}`,
-          JSON.stringify(nextEvents)
+          JSON.stringify({
+            customEvents: nextEvents,
+            deletedCustomEventDates: Array.isArray(nextDeletedDates)
+              ? [...new Set(nextDeletedDates.map((value) => String(value)))]
+              : [],
+          })
         );
       } catch {
         // ignore localStorage errors
@@ -861,15 +884,20 @@ export default function App() {
     if (!inputDate) return;
 
     const next = { ...customEvents };
+    const deletedNext = new Set(deletedCustomEventDates);
 
     if (inputText.trim()) {
       next[inputDate] = inputText.trim();
+      deletedNext.delete(inputDate);
     } else {
       delete next[inputDate];
+      deletedNext.add(inputDate);
     }
 
+    const deletedArray = [...deletedNext];
     setCustomEvents(next);
-    await saveCustomEventsToFirebase(next);
+    setDeletedCustomEventDates(deletedArray);
+    await saveCustomEventsToFirebase(next, deletedArray);
     setShowInput(false);
   }
 
@@ -877,8 +905,10 @@ export default function App() {
     const next = { ...customEvents };
     delete next[inputDate];
 
+    const deletedNext = [...new Set([...deletedCustomEventDates, inputDate])];
     setCustomEvents(next);
-    await saveCustomEventsToFirebase(next);
+    setDeletedCustomEventDates(deletedNext);
+    await saveCustomEventsToFirebase(next, deletedNext);
     setShowInput(false);
   }
 
@@ -902,18 +932,23 @@ export default function App() {
 
   async function saveLeaveDays() {
     const next = { ...customEvents };
+    const deletedNext = new Set(deletedCustomEventDates);
 
     monthLeaveDays.forEach(({ key, day }) => {
       const shouldLeave = selectedLeaveDays.includes(day);
       if (shouldLeave) {
         next[key] = "休";
+        deletedNext.delete(key);
       } else if (isLeaveText(next[key])) {
         delete next[key];
+        deletedNext.add(key);
       }
     });
 
+    const deletedArray = [...deletedNext];
     setCustomEvents(next);
-    await saveCustomEventsToFirebase(next);
+    setDeletedCustomEventDates(deletedArray);
+    await saveCustomEventsToFirebase(next, deletedArray);
     setShowLeavePicker(false);
   }
 
@@ -1226,12 +1261,19 @@ export default function App() {
           ? existingData.customEvents
           : {}),
       };
+      const nextDeletedDates = new Set(
+        Array.isArray(existingData.deletedCustomEventDates)
+          ? existingData.deletedCustomEventDates.map((value) => String(value))
+          : []
+      );
 
       days.forEach((day) => {
         const type = String(day.type || "").trim();
         const marker = String(day.marker || "").trim();
+        const dateKey = String(day.date);
         const value = type === "特殊" ? (marker || "特殊") : (type || "休");
-        nextEvents[String(day.date)] = value;
+        nextEvents[dateKey] = value;
+        nextDeletedDates.delete(dateKey);
       });
 
       const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
@@ -1240,6 +1282,7 @@ export default function App() {
       await userRef.set(
         {
           customEvents: nextEvents,
+          deletedCustomEventDates: [...nextDeletedDates],
           ...(importedLeave
             ? {
                 aiLeaveImportedAt: publishTime,
@@ -1328,12 +1371,19 @@ export default function App() {
               ? existingData.customEvents
               : {}),
           };
+          const nextDeletedDates = new Set(
+            Array.isArray(existingData.deletedCustomEventDates)
+              ? existingData.deletedCustomEventDates.map((value) => String(value))
+              : []
+          );
 
           days.forEach((day) => {
             const type = String(day.type || "").trim();
             const marker = String(day.marker || "").trim();
+            const dateKey = String(day.date);
             const value = type === "特殊" ? (marker || "特殊") : (type || "休");
-            nextEvents[String(day.date)] = value;
+            nextEvents[dateKey] = value;
+            nextDeletedDates.delete(dateKey);
           });
 
           const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
@@ -1343,6 +1393,7 @@ export default function App() {
           await userRef.set(
             {
               customEvents: nextEvents,
+              deletedCustomEventDates: [...nextDeletedDates],
               ...(importedLeave
                 ? {
                     aiLeaveImportedAt: publishTime,
