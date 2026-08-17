@@ -995,6 +995,21 @@ input {
     font-size: 12px;
   }
 
+  /* 手機版「半天/K12」分兩行顯示，維持原本字體大小，不縮小 */
+  .custom-text-multi {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    line-height: 1.05;
+    white-space: normal;
+  }
+
+  .custom-text-multi span {
+    display: block;
+  }
+
   .holiday-label {
     right: 3px;
     bottom: 3px;

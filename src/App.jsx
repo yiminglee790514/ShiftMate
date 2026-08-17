@@ -1703,7 +1703,17 @@ export default function App() {
         {hasLeave ? (
           <span className="leave-text">休</span>
         ) : (
-          customText && <span className="custom-text">{customText}</span>
+          customText && (
+            customText.includes("/") ? (
+              <span className="custom-text custom-text-multi">
+                {customText.split("/").map((text, index) => (
+                  <span key={`${text}-${index}`}>{text}</span>
+                ))}
+              </span>
+            ) : (
+              <span className="custom-text">{customText}</span>
+            )
+          )
         )}
 
         {(isOfficialHoliday || globalEvents[key]?.text) && (
