@@ -460,6 +460,9 @@ export default function App() {
   // 自訂內容：
   // K12 / 體檢 / 半天 / 休 都可以直接輸入。
   const [customEvents, setCustomEvents] = useState({});
+  // AI 發布休假後的提示時間與月份。只有該月份有 AI 帶入休假時才顯示。
+  const [aiLeaveImportedAt, setAiLeaveImportedAt] = useState(null);
+  const [aiLeaveImportedMonth, setAiLeaveImportedMonth] = useState("");
 
   const [showInput, setShowInput] = useState(false);
   const [inputDate, setInputDate] = useState("");
@@ -507,6 +510,8 @@ export default function App() {
         if (!user) {
           setShiftUser(null);
           setCustomEvents({});
+          setAiLeaveImportedAt(null);
+          setAiLeaveImportedMonth("");
           setGlobalEvents({});
           setHolidayOverrides({});
           setCustomEventsLoaded(true);
@@ -555,6 +560,8 @@ export default function App() {
             await auth.signOut();
             setShiftUser(null);
             setCustomEvents({});
+            setAiLeaveImportedAt(null);
+            setAiLeaveImportedMonth("");
             setCustomEventsLoaded(true);
             setAuthReady(true);
             return;
@@ -582,6 +589,8 @@ export default function App() {
               ? calendarData.customEvents
               : {}
           );
+          setAiLeaveImportedAt(calendarData?.aiLeaveImportedAt || null);
+          setAiLeaveImportedMonth(String(calendarData?.aiLeaveImportedMonth || ""));
           setCustomEventsLoaded(true);
           setAuthReady(true);
         } catch (error) {
@@ -652,6 +661,56 @@ export default function App() {
       }),
     [year, month, customEvents, statusMap]
   );
+
+  const monthStatistics = useMemo(() => {
+    const stats = { work: 0, off: 0, rest: 0, holiday: 0, hours: 0 };
+
+    for (let day = 1; day <= getDaysInMonth(year, month); day += 1) {
+      const key = dateKey(year, month, day);
+      const status = statusMap[key] || "work";
+      const customText = String(customEvents[key] || "").trim();
+
+      // 有「休」時，這一天統一歸到「× 例假日」統計。
+      // 同時不計入原本的 ○/■/▲ 天數，也不計上班時數。
+      if (isLeaveText(customText)) {
+        stats.holiday += 1;
+        continue;
+      }
+
+      stats[status] += 1;
+
+      // 「半」或「半天」不論底色/符號為何，都只算 5 小時。
+      if (customText.includes("半")) {
+        stats.hours += 5;
+      } else if (status === "work" || status === "off" || status === "rest") {
+        stats.hours += 10;
+      }
+    }
+
+    return stats;
+  }, [year, month, customEvents, statusMap]);
+
+  const aiLeaveNotice = useMemo(() => {
+    const currentMonthKey = `${year}-${pad(month + 1)}`;
+    if (!aiLeaveImportedAt || aiLeaveImportedMonth !== currentMonthKey) return "";
+
+    const date = aiLeaveImportedAt?.toDate
+      ? aiLeaveImportedAt.toDate()
+      : new Date(aiLeaveImportedAt);
+    if (Number.isNaN(date.getTime())) return "";
+
+    const formatted = new Intl.DateTimeFormat("zh-TW", {
+      timeZone: "Asia/Taipei",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date).replace(/-/g, "/").replace(/\s+/g, " ");
+
+    return `AI 辨識休假已於 ${formatted} 帶入，請確認`;
+  }, [year, month, aiLeaveImportedAt, aiLeaveImportedMonth]);
 
   function openLoginMenu() {
     setLoginError("");
@@ -1175,13 +1234,27 @@ export default function App() {
         nextEvents[String(day.date)] = value;
       });
 
+      const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
+      const publishTime = new Date();
+
       await userRef.set(
         {
           customEvents: nextEvents,
-          updatedAt: new Date(),
+          ...(importedLeave
+            ? {
+                aiLeaveImportedAt: publishTime,
+                aiLeaveImportedMonth: `${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`,
+              }
+            : {}),
+          updatedAt: publishTime,
         },
         { merge: true }
       );
+
+      if (importedLeave && targetUid === firebaseUser?.uid) {
+        setAiLeaveImportedAt(publishTime);
+        setAiLeaveImportedMonth(`${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`);
+      }
 
       setAiPublishMessage(
         `發布成功：${employeeId} ${employee.name || ""}，已寫入 ${days.length} 筆行事曆資料。`
@@ -1263,13 +1336,28 @@ export default function App() {
             nextEvents[String(day.date)] = value;
           });
 
+          const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
+          const publishTime = new Date();
+          const importedMonth = `${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`;
+
           await userRef.set(
             {
               customEvents: nextEvents,
-              updatedAt: new Date(),
+              ...(importedLeave
+                ? {
+                    aiLeaveImportedAt: publishTime,
+                    aiLeaveImportedMonth: importedMonth,
+                  }
+                : {}),
+              updatedAt: publishTime,
             },
             { merge: true }
           );
+
+          if (importedLeave && targetUid === firebaseUser?.uid) {
+            setAiLeaveImportedAt(publishTime);
+            setAiLeaveImportedMonth(importedMonth);
+          }
 
           publishResults.push(`${employeeId} ${employee.name || ""}：${days.length} 筆`);
         } catch (error) {
@@ -1779,6 +1867,36 @@ export default function App() {
             <button className="month-arrow" onClick={goPreviousMonth} type="button" aria-label="上一個月">‹</button>
 
             <div className="month-title">
+              <div className="mobile-month-selectors" aria-label="選擇年月">
+                <label className="date-select year-select-wrap">
+                  <span className="date-select-icon" aria-hidden="true">▦</span>
+                  <select
+                    className="year-select"
+                    value={year}
+                    onChange={(event) => setYear(Number(event.target.value))}
+                    aria-label="選擇年份"
+                  >
+                    {Array.from({ length: 31 }, (_, index) => 2010 + index).map((value) => (
+                      <option key={value} value={value}>{value} 年</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="date-select month-select-wrap">
+                  <span className="date-select-icon" aria-hidden="true">▦</span>
+                  <select
+                    className="month-select"
+                    value={month}
+                    onChange={(event) => setMonth(Number(event.target.value))}
+                    aria-label="選擇月份"
+                  >
+                    {Array.from({ length: 12 }, (_, index) => (
+                      <option key={index} value={index}>{index + 1} 月</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
               <span className="month-english">
                 {new Intl.DateTimeFormat("en-US", { month: "long" }).format(
                   new Date(year, month, 1)
@@ -1799,14 +1917,25 @@ export default function App() {
             {cells.map(renderCell)}
           </div>
 
-          <div className="legend">
-            {Object.entries(SHIFT_TYPES).map(([key, info]) => (
-              <div className="legend-item" key={key}>
-                <span className={`legend-symbol ${info.className}`}>{info.symbol}</span>
-                <span>{info.label}</span>
-              </div>
-            ))}
+          <div className="calendar-statistics" aria-label="本月統計">
+            <div className="calendar-stat-item work">
+              <span>○</span><strong className="desktop-stat-label">正班 </strong><b>{monthStatistics.work}天</b>
+            </div>
+            <div className="calendar-stat-item off">
+              <span>■</span><strong className="desktop-stat-label">休假日 </strong><b>{monthStatistics.off}天</b>
+            </div>
+            <div className="calendar-stat-item rest">
+              <span>▲</span><strong className="desktop-stat-label">休息日 </strong><b>{monthStatistics.rest}天</b>
+            </div>
+            <div className="calendar-stat-item holiday">
+              <span>×</span><strong className="desktop-stat-label">例假日 </strong><b>{monthStatistics.holiday}天</b>
+            </div>
+            <div className="calendar-stat-hours">{monthStatistics.hours}小時</div>
           </div>
+
+          {aiLeaveNotice && (
+            <div className="ai-leave-notice">{aiLeaveNotice}</div>
+          )}
 
         </section>
       </main>

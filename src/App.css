@@ -305,6 +305,10 @@ input {
   text-align: center;
 }
 
+.mobile-month-selectors {
+  display: none;
+}
+
 .month-english {
   font-size: 24px;
   line-height: 1.15;
@@ -852,10 +856,17 @@ input {
     border-radius: 13px;
   }
 
+  /* 手機版：把原本上方的年月選擇器移到「August 2026」原本的位置 */
   .date-selectors {
-    min-height: 35px;
+    display: none;
+  }
+
+  .mobile-month-selectors {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     gap: 5px;
-    margin-bottom: 0;
+    width: 100%;
   }
 
   .date-select {
@@ -898,7 +909,33 @@ input {
   }
 
   .month-english {
-    font-size: 20px;
+    display: none;
+  }
+
+  .mobile-month-selectors .date-select {
+    height: 32px;
+    border-radius: 8px;
+  }
+
+  .mobile-month-selectors .date-select-icon {
+    width: 25px;
+    flex-basis: 25px;
+    font-size: 17px;
+  }
+
+  .mobile-month-selectors .year-select,
+  .mobile-month-selectors .month-select {
+    height: 30px;
+    padding-right: 4px;
+    font-size: 14px;
+  }
+
+  .mobile-month-selectors .year-select {
+    min-width: 72px;
+  }
+
+  .mobile-month-selectors .month-select {
+    min-width: 54px;
   }
 
   .weekdays div {
@@ -2012,4 +2049,157 @@ input {
 .ai-shift-publish-button:disabled {
   opacity: .55;
   cursor: not-allowed;
+}
+
+/* =========================
+   Monthly statistics / AI notice
+   ========================= */
+.calendar-statistics {
+  margin-top: 10px;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid #dce4ef;
+  border-radius: 11px;
+  background: #fff;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(100px, 1.05fr);
+  align-items: center;
+  gap: 0;
+}
+
+.calendar-stat-item {
+  min-width: 0;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-right: 1px solid #e3e8ef;
+  color: #102a56;
+  white-space: nowrap;
+}
+
+.calendar-stat-item > span {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.calendar-stat-item.work > span { color: #222; }
+.calendar-stat-item.off > span { color: #2385ef; }
+.calendar-stat-item.rest > span { color: #eda500; }
+.calendar-stat-item.holiday > span { color: #e43131; }
+
+.calendar-stat-item strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.calendar-stat-item b {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.calendar-stat-hours {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #173967;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ai-leave-notice {
+  margin-top: 8px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: #eef9f1;
+  border: 1px solid #d8efdf;
+  color: #24723c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+  /* 手機版不再顯示 August 2026，只保留年月選擇器。 */
+  .month-navigation {
+    min-height: 33px;
+    margin-top: -1px;
+    margin-bottom: 0;
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+  }
+
+  .month-title {
+    display: none;
+  }
+
+  .month-arrow {
+    width: 30px;
+    height: 30px;
+    font-size: 24px;
+  }
+
+  /* 手機版統計全部壓成一排，盡量不佔垂直空間。 */
+  .calendar-statistics {
+    margin-top: 8px;
+    min-height: 34px;
+    padding: 5px 3px;
+    border-radius: 9px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .calendar-stat-item {
+    min-height: 24px;
+    gap: 1px;
+    border-right: 0;
+    white-space: nowrap;
+  }
+
+  .calendar-stat-item > span {
+    font-size: 14px;
+  }
+
+  .desktop-stat-label {
+    display: none;
+  }
+
+  .calendar-stat-item b {
+    font-size: 12px;
+  }
+
+  .calendar-stat-hours {
+    font-size: 12px;
+  }
+
+  .ai-leave-notice {
+    margin-top: 7px;
+    min-height: 32px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+}
+
+@media (max-width: 360px) {
+  .calendar-statistics {
+    padding-left: 1px;
+    padding-right: 1px;
+  }
+
+  .calendar-stat-item > span {
+    font-size: 13px;
+  }
+
+  .calendar-stat-item b,
+  .calendar-stat-hours {
+    font-size: 11px;
+  }
 }
