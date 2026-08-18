@@ -51,7 +51,14 @@ export default {
             name: String(p?.name || "").trim(),
           })).filter((p) => p.employeeId)
         : [];
-      const allowed = new Set(knownEmployees.map((p) => p.employeeId));
+      const selectedEmployeeIds = Array.isArray(input.selectedEmployeeIds)
+        ? input.selectedEmployeeIds.map((id) => String(id || "").trim().toUpperCase()).filter(Boolean)
+        : [];
+      const selectedSet = new Set(selectedEmployeeIds);
+      const allowed = new Set(
+        (selectedSet.size ? knownEmployees.filter((p) => selectedSet.has(p.employeeId)) : knownEmployees)
+          .map((p) => p.employeeId)
+      );
 
       const modelUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
 
@@ -164,13 +171,14 @@ export default {
 2. 圖片中其他工號一律忽略，不得新增。
 3. 第一欄是工號，後面依序是 8/1、8/2、8/3……等日期欄。
 4. 必須按照同一個人的水平列讀取，絕對不可把上下相鄰員工的格子混進來。
-5. 只抓指定標記：休、半、K12、工程。
+5. 只抓指定標記：休、半、K12、工程、3F、4F、5F、4A、4B、5A、5B。
 6. 紅底代表休，紅底即使有文字也優先視為休。
 7. 綠底任何標記都不抓。
 8. 「半」一定要抓；格子內只要清楚看到「半」，就一定建立該日期資料。不要因為同一格還有 K12 而漏掉「半」。
-9. K12、工程也一定要抓。
-10. 每個日期格請分別判斷「休、半、K12、工程」，不要只選其中一個。若同一格同時有兩個以上指定標記，全部放進 markers 陣列，例如 ["半","K12"]。
-11. 回傳 marker 時也要保留所有指定標記，例如 marker="半/K12"。只有半則 marker="半"。
+9. K12、工程、3F、4F、5F、4A、4B、5A、5B 也一定要抓。
+10. 每個日期格請分別判斷「休、半、K12、工程、3F、4F、5F、4A、4B、5A、5B」，不要只選其中一個。若同一格同時有兩個以上指定標記，全部放進 markers 陣列，例如 ["半","K12"]。
+11. 「休」具有最高優先權：只要同一格有休，不論還有 5B、4A、K12、半天或其他指定標記，最後只回傳 type="休"、marker="休"。
+12. 回傳 marker 時要保留所有非休指定標記，例如 marker="半/K12"、marker="4A/5B"。
 12. O、O5A、O5B、5A、5B、A1、A2、A3、A4 都是文字，不可誤認為三角形。
 13. 不確定的格子不要猜，放入 warnings。
 14. date 必須輸出 YYYY-MM-DD。
@@ -182,34 +190,25 @@ export default {
         const rawType = String(day?.type || "").trim();
         const rawMarker = String(day?.marker || "").trim();
         const rawMarkers = Array.isArray(day?.markers) ? day.markers : [];
-        const markerText = [rawMarker, ...rawMarkers]
+        const combined = [rawType, rawMarker, ...rawMarkers]
           .map((value) => String(value || "").trim())
           .filter(Boolean)
           .join("/");
 
-        const hasHalf = rawType === "半" || rawType === "半天" || markerText.includes("半");
-        const hasK12 = rawType.includes("K12") || markerText.includes("K12");
-        const hasEngineering = rawType.includes("工程") || markerText.includes("工程");
-        const hasOff = rawType === "休" || markerText.includes("休");
-
-        // 同一格可能同時有「半」與 K12；兩者都保留。
-        const specialMarkers = [];
-        if (hasHalf) specialMarkers.push("半");
-        if (hasK12) specialMarkers.push("K12");
-        if (hasEngineering) specialMarkers.push("工程");
-
-        if (specialMarkers.length) {
-          return {
-            date: String(day.date),
-            type: "特殊",
-            marker: specialMarkers.join("/"),
-          };
-        }
-
-        if (hasOff) {
+        if (rawType === "休" || combined.includes("休")) {
           return { date: String(day.date), type: "休", marker: "休" };
         }
 
+        const supported = ["半", "K12", "工程", "3F", "4F", "5F", "4A", "4B", "5A", "5B"];
+        const found = [];
+        for (const marker of supported) {
+          if (combined.includes(marker)) found.push(marker === "半" ? "半天" : marker);
+        }
+
+        const unique = [...new Set(found)];
+        if (unique.length) {
+          return { date: String(day.date), type: "特殊", marker: unique.join("/") };
+        }
         return null;
       }
 

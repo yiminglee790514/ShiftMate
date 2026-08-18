@@ -8,8 +8,8 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null
         && (
-          request.auth.token.email == "admin@shiftmate-login.com"
-          || request.auth.token.email == "d7445@shiftmate-login.com"
+          request.auth.token.email.lower() == "admin@shiftmate-login.com"
+          || request.auth.token.email.lower() == "d7445@shiftmate-login.com"
         );
     }
 
@@ -42,6 +42,11 @@ service cloud.firestore {
     }
 
     // 管理者建立的全員行程：所有登入員工可以讀，只有管理者可以改。
+    match /users/{userId}/aiShiftGroups/{groupId} {
+      allow read, write: if request.auth != null &&
+        (request.auth.uid == userId || isAdmin());
+    }
+
     match /globalEvents/{eventId} {
       allow read: if request.auth != null;
       allow create, update, delete: if isAdmin();

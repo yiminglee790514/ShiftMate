@@ -216,40 +216,6 @@ function getCalendarCells(year, month) {
   return cells;
 }
 
-// 你指定的規律：星期日～星期六如果有兩個黃色，
-// 第一個黃色會變成藍色。
-// 注意：週的判斷會包含月曆前後補出的日期，避免跨月時算錯。
-function applyWeeklyRule(cells, shift, year, month, statusMap) {
-  const result = { ...statusMap };
-
-  for (let start = 0; start < cells.length; start += 7) {
-    const week = cells.slice(start, start + 7);
-
-    const yellowCells = week.filter((cell) => {
-      const cellYear = cell.date.getFullYear();
-      const cellMonth = cell.date.getMonth();
-      const cellDay = cell.date.getDate();
-      return getShiftStatus(shift, cellYear, cellMonth, cellDay) === "rest";
-    });
-
-    if (yellowCells.length >= 2) {
-      const firstYellow = yellowCells[0];
-      const key = dateKey(
-        firstYellow.date.getFullYear(),
-        firstYellow.date.getMonth(),
-        firstYellow.date.getDate()
-      );
-
-      // 只修改目前正在顯示的月份，避免直接改到其他月份資料。
-      if (result[key] !== undefined) {
-        result[key] = "off";
-      }
-    }
-  }
-
-  return result;
-}
-
 
 // ============================================================
 // 12 天輪班週期
@@ -289,7 +255,7 @@ const B_CYCLES = {
 
   // B2：2026/08/13～08/24
   B2: [
-    "holiday", "off", "work", "work", "off", "holiday", "work", "work", "off", "rest", "work", "work",
+    "holiday", "off", "work", "work", "rest", "holiday", "work", "work", "off", "rest", "work", "work",
   ],
 
   // B3：2026/08/13～08/24
@@ -498,6 +464,11 @@ export default function App() {
   const [aiPublishEmployeeId, setAiPublishEmployeeId] = useState("");
   const [aiPublishBusy, setAiPublishBusy] = useState(false);
   const [aiPublishMessage, setAiPublishMessage] = useState("");
+  const [aiShiftGroups, setAiShiftGroups] = useState([]);
+  const [aiShiftGroupId, setAiShiftGroupId] = useState("");
+  const [aiShiftGroupName, setAiShiftGroupName] = useState("");
+  const [aiSelectedEmployeeIds, setAiSelectedEmployeeIds] = useState([]);
+  const [aiGroupBusy, setAiGroupBusy] = useState(false);
 
   useEffect(() => {
     let unsubscribe = null;
@@ -977,6 +948,11 @@ export default function App() {
     setAiShiftPreview("");
     setAiShiftResults(null);
     setAiShiftError("");
+    setAiSelectedEmployeeIds([]);
+    setAiPublishEmployeeId("");
+    setAiPublishMessage("");
+    setAiShiftGroupId("");
+    setAiShiftGroupName("");
   }
 
   function handleAiShiftFile(event) {
@@ -1046,16 +1022,23 @@ export default function App() {
     setAiShiftResults(null);
 
     try {
-      const knownEmployees = adminPeople.map((person) => ({
+      const allKnownEmployees = adminPeople.map((person) => ({
         employeeId: String(person.employeeId || "").trim().toUpperCase(),
         name: person.name || "",
       })).filter((person) => person.employeeId);
 
-      if (!knownEmployees.length) {
+      if (!allKnownEmployees.length) {
         throw new Error("系統目前沒有可比對的員工資料。");
       }
 
-      // 這版刻意只允許最多 2 次 Gemini request：
+      const selectedIds = new Set(
+        aiSelectedEmployeeIds.map((value) => String(value || "").trim().toUpperCase()).filter(Boolean)
+      );
+      if (!selectedIds.size) throw new Error("請先勾選要辨識的員工。");
+
+      const knownEmployees = allKnownEmployees.filter((person) => selectedIds.has(person.employeeId));
+
+      // 只對勾選的員工做兩階段 Gemini request：
       // ① 整張圖片一次辨識所有系統員工
       // ② 整張圖片一次重新校對第一次結果
       // 不做分批、不做逐員工 API 呼叫，也不自動 retry，避免吃掉 Gemini quota。
@@ -1067,6 +1050,7 @@ export default function App() {
             mode,
             image: aiShiftPreview,
             knownEmployees,
+            selectedEmployeeIds: [...selectedIds],
             year: String(year),
             month: String(month + 1),
             ...extra,
@@ -1135,26 +1119,26 @@ export default function App() {
 
               if (!day?.date) return null;
 
-              const hasHalf = rawType === "半" || rawType === "半天" || markerText.includes("半");
-              const hasK12 = rawType.includes("K12") || markerText.includes("K12");
-              const hasEngineering = rawType.includes("工程") || markerText.includes("工程");
               const hasOff = rawType === "休" || markerText.includes("休");
+              if (hasOff) {
+                return { date: String(day.date), type: "休", marker: "休" };
+              }
 
+              const supportedMarkers = ["半", "K12", "工程", "3F", "4F", "5F", "4A", "4B", "5A", "5B"];
               const markers = [];
-              if (hasHalf) markers.push("半天");
-              if (hasK12) markers.push("K12");
-              if (hasEngineering) markers.push("工程");
+              supportedMarkers.forEach((marker) => {
+                if (markerText.includes(marker)) {
+                  markers.push(marker === "半" ? "半天" : marker);
+                }
+              });
 
-              if (markers.length) {
+              const uniqueMarkers = [...new Set(markers)];
+              if (uniqueMarkers.length) {
                 return {
                   date: String(day.date),
                   type: "特殊",
-                  marker: markers.join("/"),
+                  marker: uniqueMarkers.join("/"),
                 };
-              }
-
-              if (hasOff) {
-                return { date: String(day.date), type: "休", marker: "休" };
               }
 
               return null;
@@ -1182,13 +1166,16 @@ export default function App() {
       (Array.isArray(first?.warnings) ? first.warnings : []).forEach((item) => warnings.push(String(item)));
       (Array.isArray(second?.warnings) ? second.warnings : []).forEach((item) => warnings.push(String(item)));
 
-      setAiShiftResults({
+      const results = {
         year: String(year),
         month: String(month + 1),
         employees,
         warnings,
-        recognitionMode: "整張圖片兩階段辨識",
-      });
+        recognitionMode: "指定員工兩階段辨識",
+      };
+
+      setAiShiftResults(results);
+      await createAiShiftGroupFromResults(results);
     } catch (error) {
       console.error("AI 排班辨識失敗：", error);
       setAiShiftError(error?.message || "AI 辨識失敗，請稍後再試。");
@@ -1299,6 +1286,23 @@ export default function App() {
         setAiLeaveImportedMonth(`${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`);
       }
 
+      if (aiShiftGroupId) {
+        const currentGroup = aiShiftGroups.find((group) => group.id === aiShiftGroupId);
+        const publishedIds = new Set(
+          Array.isArray(currentGroup?.publishedEmployeeIds)
+            ? currentGroup.publishedEmployeeIds
+            : Array.isArray(aiShiftResults?.publishedEmployeeIds)
+              ? aiShiftResults.publishedEmployeeIds
+              : []
+        );
+        publishedIds.add(employeeId);
+        await saveAiShiftGroup(aiShiftGroupId, { publishedEmployeeIds: [...publishedIds] });
+        setAiShiftGroups((current) => current.map((group) =>
+          group.id === aiShiftGroupId ? { ...group, publishedEmployeeIds: [...publishedIds] } : group
+        ));
+        setAiShiftResults((current) => current ? { ...current, publishedEmployeeIds: [...publishedIds] } : current);
+      }
+
       setAiPublishMessage(
         `發布成功：${employeeId} ${employee.name || ""}，已寫入 ${days.length} 筆行事曆資料。`
       );
@@ -1327,6 +1331,9 @@ export default function App() {
       const { db } = getFirebaseServices();
       const publishResults = [];
       const failedResults = [];
+      const publishedIds = new Set(
+        Array.isArray(aiShiftResults?.publishedEmployeeIds) ? aiShiftResults.publishedEmployeeIds : []
+      );
 
       for (const employee of employees) {
         const employeeId = String(employee.employeeId || "").trim().toUpperCase();
@@ -1411,10 +1418,19 @@ export default function App() {
           }
 
           publishResults.push(`${employeeId} ${employee.name || ""}：${days.length} 筆`);
+          publishedIds.add(employeeId);
         } catch (error) {
           console.error(`AI 排班發布失敗：${employeeId}`, error);
           failedResults.push(`${employeeId}：${error?.message || "寫入失敗"}`);
         }
+      }
+
+      if (aiShiftGroupId && publishedIds.size) {
+        await saveAiShiftGroup(aiShiftGroupId, { publishedEmployeeIds: [...publishedIds] });
+        setAiShiftGroups((current) => current.map((group) =>
+          group.id === aiShiftGroupId ? { ...group, publishedEmployeeIds: [...publishedIds] } : group
+        ));
+        setAiShiftResults((current) => current ? { ...current, publishedEmployeeIds: [...publishedIds] } : current);
       }
 
       if (failedResults.length) {
@@ -1434,7 +1450,15 @@ export default function App() {
     }
   }
 
-  const isAdmin = shiftUser?.role === "admin" || firebaseUser?.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase();
+  const currentEmployeeId = String(
+    shiftUser?.employeeId || firebaseUser?.email?.split("@")[0] || ""
+  ).trim().toUpperCase();
+
+  // D7445 顯示管理按鈕；不另外建立管理者角色系統。
+  const isAdmin =
+    currentEmployeeId === "D7445" ||
+    shiftUser?.role === "admin" ||
+    firebaseUser?.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase();
 
   const currentHolidayMap = useMemo(
     () => buildHolidayMap(year, holidayOverrides),
@@ -1460,6 +1484,141 @@ export default function App() {
     });
 
     setAdminPeople(Array.from(uniquePeople.values()));
+  }
+
+  async function loadAiShiftGroups() {
+    if (!firebaseUser?.uid || !isAdmin) return;
+    try {
+      const { db } = getFirebaseServices();
+      const userRef = db.collection("users").doc(firebaseUser.uid);
+      const userSnapshot = await userRef.get();
+      const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+      const savedGroups = Array.isArray(userData.aiShiftGroups)
+        ? userData.aiShiftGroups
+        : [];
+
+      // AI 群組直接保存於目前管理者自己的 users 文件。
+      // 這樣不需要額外的 Firestore 子集合權限，D7445 登入後即可正常讀寫。
+      const normalizedGroups = savedGroups
+        .filter((group) => group && group.id)
+        .sort((a, b) => {
+          const ta = a?.createdAt?.toMillis?.() || new Date(a?.createdAt || 0).getTime() || 0;
+          const tb = b?.createdAt?.toMillis?.() || new Date(b?.createdAt || 0).getTime() || 0;
+          return tb - ta;
+        });
+
+      setAiShiftGroups(normalizedGroups);
+      setAiShiftError("");
+    } catch (error) {
+      console.error("讀取 AI 辨識群組失敗：", error);
+      setAiShiftGroups([]);
+      setAiShiftError(error?.message || "讀取 AI 辨識群組失敗。");
+    }
+  }
+
+  function makeAiGroupId() {
+    return `g_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function selectAiShiftGroup(group) {
+    if (!group) return;
+    const employees = Array.isArray(group.employees) ? group.employees : [];
+    setAiShiftGroupId(group.id);
+    setAiShiftGroupName(group.name || "");
+    setAiShiftResults({
+      year: String(group.year || year),
+      month: String(group.month || month + 1),
+      employees,
+      warnings: Array.isArray(group.warnings) ? group.warnings : [],
+      recognitionMode: group.recognitionMode || "已保存的 AI 辨識結果",
+      groupId: group.id,
+      groupName: group.name || "",
+      publishedEmployeeIds: Array.isArray(group.publishedEmployeeIds) ? group.publishedEmployeeIds : [],
+    });
+    setAiPublishEmployeeId(employees[0]?.employeeId || "");
+    setAiPublishMessage("");
+    setAiShiftError("");
+  }
+
+  function toggleAiSelectedEmployee(employeeId) {
+    const id = String(employeeId || "").trim().toUpperCase();
+    setAiSelectedEmployeeIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+    );
+  }
+
+  function toggleAllAiEmployees() {
+    const allIds = adminPeople.map((person) => String(person?.employeeId || "").trim().toUpperCase()).filter(Boolean);
+    setAiSelectedEmployeeIds((current) => current.length === allIds.length ? [] : allIds);
+  }
+
+  async function saveAiShiftGroup(groupId, groupData) {
+    if (!firebaseUser?.uid) throw new Error("尚未登入，無法保存 AI 辨識群組。");
+    const { db } = getFirebaseServices();
+    const userRef = db.collection("users").doc(firebaseUser.uid);
+    const userSnapshot = await userRef.get();
+    const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+    const currentGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
+    const nextGroup = { id: groupId, ...groupData, updatedAt: new Date() };
+    const nextGroups = [
+      nextGroup,
+      ...currentGroups.filter((group) => String(group?.id || "") !== String(groupId)),
+    ];
+
+    await userRef.set({ aiShiftGroups: nextGroups }, { merge: true });
+  }
+
+  async function createAiShiftGroupFromResults(results) {
+    const groupName = aiShiftGroupName.trim();
+    if (!groupName) throw new Error("請先輸入 AI 辨識群組名稱，例如「2026年8月排班」。");
+    if (aiShiftGroups.some((group) => String(group?.name || "").trim() === groupName)) {
+      throw new Error(`群組「${groupName}」已存在，請換一個名稱。`);
+    }
+
+    const groupId = makeAiGroupId();
+    const groupData = {
+      name: groupName,
+      year: String(results.year || year),
+      month: String(results.month || month + 1),
+      employees: Array.isArray(results.employees) ? results.employees : [],
+      warnings: Array.isArray(results.warnings) ? results.warnings : [],
+      recognitionMode: results.recognitionMode || "指定員工兩階段辨識",
+      sourceFileName: aiShiftFile?.name || "",
+      createdAt: new Date(),
+      publishedEmployeeIds: [],
+    };
+    await saveAiShiftGroup(groupId, groupData);
+    const saved = { id: groupId, ...groupData };
+    setAiShiftGroups((current) => [saved, ...current]);
+    setAiShiftGroupId(groupId);
+    setAiShiftResults({ ...results, groupId, groupName, publishedEmployeeIds: [] });
+  }
+
+  async function deleteAiShiftGroup(group) {
+    if (!group?.id || !firebaseUser?.uid) return;
+    if (!window.confirm(`確定要刪除「${String(group.name || "這個群組")}」嗎？\n群組內的 AI 辨識結果也會一起刪除。`)) return;
+
+    setAiGroupBusy(true);
+    try {
+      const { db } = getFirebaseServices();
+      const userRef = db.collection("users").doc(firebaseUser.uid);
+      const userSnapshot = await userRef.get();
+      const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+      const currentGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
+      const nextGroups = currentGroups.filter((item) => String(item?.id || "") !== String(group.id));
+      await userRef.set({ aiShiftGroups: nextGroups }, { merge: true });
+      setAiShiftGroups((current) => current.filter((item) => item.id !== group.id));
+      if (aiShiftGroupId === group.id) {
+        setAiShiftGroupId("");
+        setAiShiftResults(null);
+        setAiPublishEmployeeId("");
+        setAiPublishMessage("");
+      }
+    } catch (error) {
+      setAiShiftError(error?.message || "刪除群組失敗。");
+    } finally {
+      setAiGroupBusy(false);
+    }
   }
 
   async function savePerson() {
@@ -1704,7 +1863,10 @@ export default function App() {
   async function openAdmin() {
     setShowAdminPanel(true);
     setAdminMessage("");
-    if (isAdmin) await loadAdminPeople();
+    if (isAdmin) {
+      await loadAdminPeople();
+      await loadAiShiftGroups();
+    }
   }
 
   function renderCell(cell) {
@@ -2093,9 +2255,82 @@ export default function App() {
               <div className="admin-section ai-shift-section">
                 <h3>AI 排班圖片辨識</h3>
                 <p className="ai-shift-help">
-                  上傳排班表後，Gemini 只先辨識「工號、日期、休、半、K12、工程」。
-                  <strong>這一階段不會寫入任何員工行事曆。</strong>
+                  先建立辨識群組，再勾選要辨識的員工。辨識結果會保存到群組，之後可以直接發布，不需要重新辨識。
                 </p>
+
+                <div className="ai-shift-group-panel">
+                  <div className="ai-shift-group-header">
+                    <strong>AI 辨識群組</strong>
+                    <span>{aiShiftGroups.length} 個</span>
+                  </div>
+                  <div className="ai-shift-group-create">
+                    <input
+                      value={aiShiftGroupName}
+                      placeholder={`例如：${year}年${month + 1}月排班`}
+                      onChange={(event) => setAiShiftGroupName(event.target.value)}
+                      disabled={aiGroupBusy || aiShiftBusy}
+                    />
+                    <span className="ai-shift-group-month">{year} 年 {month + 1} 月</span>
+                  </div>
+
+                  {aiShiftGroups.length > 0 && (
+                    <div className="ai-shift-group-list">
+                      {aiShiftGroups.map((group) => (
+                        <div className={`ai-shift-group-row ${aiShiftGroupId === group.id ? "active" : ""}`} key={group.id}>
+                          <button
+                            type="button"
+                            className="ai-shift-group-select"
+                            onClick={() => selectAiShiftGroup(group)}
+                            disabled={aiGroupBusy || aiShiftBusy}
+                          >
+                            <strong>{group.name || "未命名群組"}</strong>
+                            <span>
+                              {group.year && group.month ? `${group.year}/${group.month}` : ""}
+                              {" · "}
+                              {Array.isArray(group.employees) ? group.employees.length : 0} 位
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="ai-shift-group-delete"
+                            onClick={() => deleteAiShiftGroup(group)}
+                            disabled={aiGroupBusy || aiShiftBusy}
+                          >
+                            刪除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="ai-shift-employee-picker">
+                  <div className="ai-shift-picker-header">
+                    <strong>選擇要辨識的員工</strong>
+                    <button type="button" onClick={toggleAllAiEmployees} disabled={aiShiftBusy || !adminPeople.length}>
+                      {aiSelectedEmployeeIds.length === adminPeople.length ? "取消全選" : "全選"}
+                    </button>
+                  </div>
+                  <div className="ai-shift-employee-grid">
+                    {adminPeople.map((person) => {
+                      const id = String(person?.employeeId || "").trim().toUpperCase();
+                      const checked = aiSelectedEmployeeIds.includes(id);
+                      return (
+                        <label className={`ai-shift-employee-check ${checked ? "checked" : ""}`} key={id}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAiSelectedEmployee(id)}
+                            disabled={aiShiftBusy}
+                          />
+                          <span>{id}</span>
+                          <small>{person?.name || ""}</small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {!adminPeople.length && <div className="ai-shift-empty">尚未讀取使用者名單。</div>}
+                </div>
 
                 <div className="ai-shift-upload-box">
                   <input
@@ -2134,9 +2369,9 @@ export default function App() {
                     className="save-button"
                     type="button"
                     onClick={runAiShiftRecognition}
-                    disabled={aiShiftBusy || !aiShiftPreview}
+                    disabled={aiShiftBusy || !aiShiftPreview || !aiSelectedEmployeeIds.length || !aiShiftGroupName.trim()}
                   >
-                    {aiShiftBusy ? "Gemini 辨識中…" : "開始 AI 辨識"}
+                    {aiShiftBusy ? "Gemini 辨識中…" : "開始 AI 辨識並保存"}
                   </button>
                 </div>
 
@@ -2152,6 +2387,7 @@ export default function App() {
                         </p>
                       </div>
                       <span>
+                        {aiShiftResults.groupName ? `${aiShiftResults.groupName} · ` : ""}
                         {Array.isArray(aiShiftResults.employees)
                           ? `${aiShiftResults.employees.length} 位`
                           : "—"}
@@ -2211,6 +2447,10 @@ export default function App() {
                               <strong>{employee.employeeId || "未辨識工號"}</strong>
                               <span>{employee.name || "未配對姓名"}</span>
                               {employee.matched === false && <em>系統找不到此工號</em>}
+                              {Array.isArray(aiShiftResults.publishedEmployeeIds) &&
+                                aiShiftResults.publishedEmployeeIds.includes(employee.employeeId) && (
+                                  <em className="published">已發布</em>
+                                )}
                             </div>
 
                             <div className="ai-shift-day-results">

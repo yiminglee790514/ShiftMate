@@ -1747,6 +1747,7 @@ input {
 }
 
 .ai-shift-upload-box {
+  margin-top: 18px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2219,5 +2220,225 @@ input {
   .calendar-stat-item b,
   .calendar-stat-hours {
     font-size: 11px;
+  }
+}
+
+
+/* =========================
+   AI Shift Groups / Employee Picker
+   ========================= */
+.ai-shift-group-panel,
+.ai-shift-employee-picker {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #dfe6ef;
+  border-radius: 13px;
+  background: #f8fafd;
+}
+
+.ai-shift-group-header,
+.ai-shift-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.ai-shift-group-header strong,
+.ai-shift-picker-header strong {
+  color: #102a56;
+}
+
+.ai-shift-group-header span {
+  color: #718096;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-shift-group-create {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.ai-shift-group-create input {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid #cbd6e5;
+  border-radius: 9px;
+  padding: 0 11px;
+  outline: none;
+  color: #102a56;
+  background: #fff;
+}
+
+.ai-shift-group-month {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: #edf4ff;
+  color: #1664d8;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ai-shift-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 9px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.ai-shift-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e0e6ee;
+  border-radius: 9px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ai-shift-group-row.active {
+  border-color: #4389ef;
+  box-shadow: 0 0 0 2px rgba(67,137,239,.08);
+}
+
+.ai-shift-group-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-shift-group-select strong,
+.ai-shift-group-select span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-shift-group-select strong {
+  color: #102a56;
+  font-size: 14px;
+}
+
+.ai-shift-group-select span {
+  margin-top: 2px;
+  color: #718096;
+  font-size: 11px;
+}
+
+.ai-shift-group-delete {
+  min-height: 34px;
+  margin-right: 7px;
+  padding: 0 9px;
+  border: 1px solid #f0c9ce;
+  border-radius: 8px;
+  background: #fff5f6;
+  color: #c72f3c;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ai-shift-picker-header button {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid #cbd6e5;
+  border-radius: 8px;
+  background: #fff;
+  color: #1664d8;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ai-shift-employee-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+
+.ai-shift-employee-check {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #e0e6ee;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ai-shift-employee-check.checked {
+  border-color: #4389ef;
+  background: #edf6ff;
+}
+
+.ai-shift-employee-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #287be8;
+}
+
+.ai-shift-employee-check span {
+  color: #102a56;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.ai-shift-employee-check small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #718096;
+  font-size: 11px;
+}
+
+.ai-shift-person .published {
+  background: #eaf8ef;
+  color: #198754;
+}
+
+@media (max-width: 700px) {
+  .ai-shift-group-panel,
+  .ai-shift-employee-picker {
+    padding: 10px;
+    margin-top: 10px;
+  }
+
+  .ai-shift-group-create {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-shift-group-month {
+    min-height: 34px;
+    justify-content: center;
+  }
+
+  .ai-shift-employee-grid {
+    grid-template-columns: 1fr;
+    max-height: 180px;
+  }
+
+  .ai-shift-group-list {
+    max-height: 150px;
   }
 }
