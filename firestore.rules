@@ -42,9 +42,13 @@ service cloud.firestore {
     }
 
     // 管理者建立的全員行程：所有登入員工可以讀，只有管理者可以改。
-    match /users/{userId}/aiShiftGroups/{groupId} {
-      allow read, write: if request.auth != null &&
-        (request.auth.uid == userId || isAdmin());
+    match /aiShiftGroups/{groupId} {
+      allow read: if isAdmin() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isAdmin() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isAdmin() &&
+        resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAdmin() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /globalEvents/{eventId} {

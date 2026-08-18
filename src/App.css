@@ -2442,3 +2442,33 @@ input {
     max-height: 150px;
   }
 }
+
+
+/* AI / 月曆特殊標記：所有裝置固定上下排列，例如 半天/4A、半天/K12、4A/5B */
+.custom-text-multi {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  line-height: 1.05 !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
+  overflow: hidden !important;
+  max-width: 100% !important;
+}
+
+.custom-text-multi > span {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 700px) {
+  .custom-text-multi {
+    font-size: 10px !important;
+    line-height: 1.0 !important;
+  }
+}

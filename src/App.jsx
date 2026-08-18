@@ -1038,10 +1038,8 @@ export default function App() {
 
       const knownEmployees = allKnownEmployees.filter((person) => selectedIds.has(person.employeeId));
 
-      // 只對勾選的員工做兩階段 Gemini request：
-      // ① 整張圖片一次辨識所有系統員工
-      // ② 整張圖片一次重新校對第一次結果
-      // 不做分批、不做逐員工 API 呼叫，也不自動 retry，避免吃掉 Gemini quota。
+      // 只對勾選的員工做一次 Gemini request。
+      // 不再做第二次 verify，避免同一張圖片重複送 Gemini、拖慢速度與消耗 quota。
       const requestGemini = async (mode, extra = {}) => {
         const response = await fetch("/api/ai-shift-import", {
           method: "POST",
@@ -1066,40 +1064,19 @@ export default function App() {
         return data;
       };
 
-      // 第 1 次：整張表一次辨識，只接受系統內工號。
+      // 一次辨識：只接受使用者勾選的工號。
       const first = await requestGemini("recognizeAll");
 
       if (!Array.isArray(first?.employees)) {
-        throw new Error("AI 第一次辨識沒有回傳有效結果。");
+        throw new Error("AI 辨識沒有回傳有效結果。");
       }
 
-      // 第 2 次：把第一次結果交給 Gemini，要求依原圖逐列重新核對。
-      const second = await requestGemini("verifyAll", {
-        firstResult: first.employees,
-      });
-
       const knownById = new Map(
+
         knownEmployees.map((person) => [person.employeeId, person])
       );
 
-      // 第二階段優先，但如果第二階段漏掉某個系統員工，保留第一階段該員工結果。
-      const firstById = new Map(
-        (Array.isArray(first?.employees) ? first.employees : [])
-          .map((employee) => [String(employee?.employeeId || "").trim().toUpperCase(), employee])
-          .filter(([id]) => id)
-      );
-      const secondById = new Map(
-        (Array.isArray(second?.employees) ? second.employees : [])
-          .map((employee) => [String(employee?.employeeId || "").trim().toUpperCase(), employee])
-          .filter(([id]) => id)
-      );
-      const mergedIds = new Set([...firstById.keys(), ...secondById.keys()]);
-      const rawEmployees = Array.from(mergedIds).map((employeeId) => {
-        const secondEmployee = secondById.get(employeeId);
-        const firstEmployee = firstById.get(employeeId);
-        // 第二階段有資料就優先；完全漏掉才使用第一階段。
-        return secondEmployee || firstEmployee;
-      });
+      const rawEmployees = Array.isArray(first?.employees) ? first.employees : [];
 
       const employees = rawEmployees
         .map((employee) => {
@@ -1164,14 +1141,13 @@ export default function App() {
 
       const warnings = [];
       (Array.isArray(first?.warnings) ? first.warnings : []).forEach((item) => warnings.push(String(item)));
-      (Array.isArray(second?.warnings) ? second.warnings : []).forEach((item) => warnings.push(String(item)));
 
       const results = {
         year: String(year),
         month: String(month + 1),
         employees,
         warnings,
-        recognitionMode: "指定員工兩階段辨識",
+        recognitionMode: "指定員工單次辨識",
       };
 
       setAiShiftResults(results);
@@ -1490,24 +1466,40 @@ export default function App() {
     if (!firebaseUser?.uid || !isAdmin) return;
     try {
       const { db } = getFirebaseServices();
-      const userRef = db.collection("users").doc(firebaseUser.uid);
-      const userSnapshot = await userRef.get();
-      const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-      const savedGroups = Array.isArray(userData.aiShiftGroups)
-        ? userData.aiShiftGroups
-        : [];
+      const snapshot = await db.collection("aiShiftGroups")
+        .where("ownerUid", "==", firebaseUser.uid)
+        .get();
 
-      // AI 群組直接保存於目前管理者自己的 users 文件。
-      // 這樣不需要額外的 Firestore 子集合權限，D7445 登入後即可正常讀寫。
-      const normalizedGroups = savedGroups
-        .filter((group) => group && group.id)
-        .sort((a, b) => {
-          const ta = a?.createdAt?.toMillis?.() || new Date(a?.createdAt || 0).getTime() || 0;
-          const tb = b?.createdAt?.toMillis?.() || new Date(b?.createdAt || 0).getTime() || 0;
-          return tb - ta;
-        });
+      let groups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-      setAiShiftGroups(normalizedGroups);
+      // 相容舊版：如果新的獨立群組還沒有資料，就讀取舊 users/{uid}.aiShiftGroups。
+      if (!groups.length) {
+        const userSnapshot = await db.collection("users").doc(firebaseUser.uid).get();
+        const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
+        const oldGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
+        groups = oldGroups.filter((group) => group?.id).map((group) => ({
+          ...group,
+          ownerUid: firebaseUser.uid,
+        }));
+
+        // 自動搬到新的獨立群組集合，避免之後再被 users 文件大小限制影響。
+        for (const group of groups) {
+          await db.collection("aiShiftGroups").doc(String(group.id)).set({
+            ...group,
+            ownerUid: firebaseUser.uid,
+            migratedFromLegacy: true,
+            updatedAt: new Date(),
+          }, { merge: true });
+        }
+      }
+
+      groups.sort((a, b) => {
+        const ta = a?.createdAt?.toMillis?.() || new Date(a?.createdAt || 0).getTime() || 0;
+        const tb = b?.createdAt?.toMillis?.() || new Date(b?.createdAt || 0).getTime() || 0;
+        return tb - ta;
+      });
+
+      setAiShiftGroups(groups);
       setAiShiftError("");
     } catch (error) {
       console.error("讀取 AI 辨識群組失敗：", error);
@@ -1555,17 +1547,11 @@ export default function App() {
   async function saveAiShiftGroup(groupId, groupData) {
     if (!firebaseUser?.uid) throw new Error("尚未登入，無法保存 AI 辨識群組。");
     const { db } = getFirebaseServices();
-    const userRef = db.collection("users").doc(firebaseUser.uid);
-    const userSnapshot = await userRef.get();
-    const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-    const currentGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
-    const nextGroup = { id: groupId, ...groupData, updatedAt: new Date() };
-    const nextGroups = [
-      nextGroup,
-      ...currentGroups.filter((group) => String(group?.id || "") !== String(groupId)),
-    ];
-
-    await userRef.set({ aiShiftGroups: nextGroups }, { merge: true });
+    await db.collection("aiShiftGroups").doc(String(groupId)).set({
+      ...groupData,
+      ownerUid: firebaseUser.uid,
+      updatedAt: new Date(),
+    }, { merge: true });
   }
 
   async function createAiShiftGroupFromResults(results) {
@@ -1586,6 +1572,7 @@ export default function App() {
       sourceFileName: aiShiftFile?.name || "",
       createdAt: new Date(),
       publishedEmployeeIds: [],
+      ownerUid: firebaseUser?.uid || "",
     };
     await saveAiShiftGroup(groupId, groupData);
     const saved = { id: groupId, ...groupData };
@@ -1601,12 +1588,15 @@ export default function App() {
     setAiGroupBusy(true);
     try {
       const { db } = getFirebaseServices();
-      const userRef = db.collection("users").doc(firebaseUser.uid);
-      const userSnapshot = await userRef.get();
-      const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-      const currentGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
-      const nextGroups = currentGroups.filter((item) => String(item?.id || "") !== String(group.id));
-      await userRef.set({ aiShiftGroups: nextGroups }, { merge: true });
+      const groupRef = db.collection("aiShiftGroups").doc(String(group.id));
+      const groupSnapshot = await groupRef.get();
+      if (groupSnapshot.exists) {
+        const groupData = groupSnapshot.data() || {};
+        if (groupData.ownerUid !== firebaseUser.uid) {
+          throw new Error("沒有權限刪除此 AI 群組。");
+        }
+        await groupRef.delete();
+      }
       setAiShiftGroups((current) => current.filter((item) => item.id !== group.id));
       if (aiShiftGroupId === group.id) {
         setAiShiftGroupId("");
