@@ -1008,7 +1008,170 @@ export default function App() {
     context.imageSmoothingQuality = "high";
     context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
 
-    return canvas.toDataURL("image/jpeg", 0.94);
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }
+
+  async function detectAiShiftEmployeeCrops(src) {
+    const image = await loadImageForAi(src);
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(width, 1400);
+    canvas.height = Math.max(1, Math.round(height * (canvas.width / width)));
+    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const warmRows = [];
+    const sampleStep = Math.max(1, Math.floor(canvas.width / 700));
+
+    for (let y = 0; y < canvas.height; y += 1) {
+      let warm = 0;
+      let samples = 0;
+      for (let x = 0; x < canvas.width; x += sampleStep) {
+        const i = (y * canvas.width + x) * 4;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        if (r > 150 && g > 125 && r - b > 18 && g - b > 8) warm += 1;
+        samples += 1;
+      }
+      warmRows.push(samples ? warm / samples : 0);
+    }
+
+    // 新格式：每位員工都有自己的「日期列＋員工列」。
+    // 每一條淡橘/淡黃日期列就是一個獨立員工區塊的起點。
+    const bands = [];
+    let start = -1;
+    for (let y = 0; y < warmRows.length; y += 1) {
+      const hit = warmRows[y] >= 0.42;
+      if (hit && start < 0) start = y;
+      if ((!hit || y === warmRows.length - 1) && start >= 0) {
+        const end = hit && y === warmRows.length - 1 ? y : y - 1;
+        if (end - start + 1 >= 2) bands.push({ start, end });
+        start = -1;
+      }
+    }
+
+    const merged = [];
+    for (const band of bands) {
+      const last = merged[merged.length - 1];
+      if (last && band.start - last.end <= 3) last.end = band.end;
+      else merged.push({ ...band });
+    }
+
+    const candidates = merged.filter((band) => {
+      const h = band.end - band.start + 1;
+      return h >= 3 && h <= Math.max(28, canvas.height * 0.12);
+    });
+
+    // 每一個日期標題列到下一個日期標題列，就是「一位員工」的完整區塊。
+    // 不再使用等距 3 人 fallback，避免把不同員工的資料切在一起。
+    return candidates.map((band, index) => {
+      const next = candidates[index + 1];
+      const y = Math.max(0, Math.floor((band.start / canvas.height) * height) - 2);
+      const nextY = next
+        ? Math.floor((next.start / canvas.height) * height)
+        : height;
+      return {
+        x: 0,
+        y,
+        width,
+        height: Math.min(height - y, Math.max(1, nextY - y + 1)),
+      };
+    });
+  }
+
+  async function detectRedRestDatesFromCrop(src, crop) {
+    // 「休」在排班圖中固定是紅字；對紅字日期做一次本地像素定位，
+    // 用來修正 Gemini 偶爾左右偏一格的情況。特殊標記仍交給 Gemini。
+    const image = await loadImageForAi(src);
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const x = Math.max(0, Math.floor(crop.x || 0));
+    const y = Math.max(0, Math.floor(crop.y || 0));
+    const width = Math.min(sourceWidth - x, Math.max(1, Math.floor(crop.width)));
+    const height = Math.min(sourceHeight - y, Math.max(1, Math.floor(crop.height)));
+
+    const scale = Math.min(2, Math.max(1, 1400 / Math.max(width, height)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const startY = Math.floor(canvas.height * 0.42);
+    const redByX = new Array(canvas.width).fill(0);
+
+    for (let py = startY; py < canvas.height; py += 1) {
+      for (let px = 0; px < canvas.width; px += 1) {
+        const i = (py * canvas.width + px) * 4;
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        // 避免把淡橘色背景/網格誤認成紅字。
+        if (r >= 150 && r - g >= 70 && r - b >= 55 && g < 130) redByX[px] += 1;
+      }
+    }
+
+    // 把相鄰紅字像素合成一個「休」字群。
+    const clusters = [];
+    let clusterStart = -1;
+    for (let px = 0; px < redByX.length; px += 1) {
+      const hit = redByX[px] >= 1;
+      if (hit && clusterStart < 0) clusterStart = px;
+      if ((!hit || px === redByX.length - 1) && clusterStart >= 0) {
+        const end = hit && px === redByX.length - 1 ? px : px - 1;
+        if (end - clusterStart + 1 >= Math.max(2, Math.round(scale * 2))) {
+          clusters.push({ start: clusterStart, end });
+        }
+        clusterStart = -1;
+      }
+    }
+
+    // 第一欄是工號欄；剩下 30 欄等寬。用 crop 的實際寬度估算資料區，
+    // 不依賴固定像素，換圖片尺寸也能使用。
+    const employeeColumnRatio = 0.078;
+    const dataStart = canvas.width * employeeColumnRatio;
+    const dataWidth = canvas.width - dataStart;
+    const result = new Set();
+
+    for (const cluster of clusters) {
+      const centerX = (cluster.start + cluster.end) / 2;
+      if (centerX < dataStart) continue;
+      const rawIndex = Math.round(((centerX - dataStart) / dataWidth) * 30 - 0.5);
+      const day = rawIndex + 1;
+      if (day >= 1 && day <= 30) result.add(day);
+    }
+
+    return [...result].sort((a, b) => a - b);
+  }
+
+  async function combineAiCropImages(cropImages) {
+    const images = await Promise.all(cropImages.map((src) => loadImageForAi(src)));
+    if (!images.length) throw new Error("沒有可供 AI 辨識的員工區塊。");
+
+    const gap = 18;
+    const width = Math.max(...images.map((image) => image.naturalWidth || image.width));
+    const height = images.reduce((sum, image) => sum + (image.naturalHeight || image.height), 0) + gap * (images.length - 1);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+
+    let y = 0;
+    for (const image of images) {
+      const imageWidth = image.naturalWidth || image.width;
+      const imageHeight = image.naturalHeight || image.height;
+      context.drawImage(image, 0, y, imageWidth, imageHeight);
+      y += imageHeight + gap;
+    }
+
+    return canvas.toDataURL("image/jpeg", 0.92);
   }
 
   async function runAiShiftRecognition() {
@@ -1036,22 +1199,27 @@ export default function App() {
       );
       if (!selectedIds.size) throw new Error("請先勾選要辨識的員工。");
 
-      const knownEmployees = allKnownEmployees.filter((person) => selectedIds.has(person.employeeId));
+      // 這裡不能依系統工號排序來硬切 3 人一組；Firebase 的 employeeId 是排序過的，
+      // 和圖片上的實際 3 人分組沒有關係。真正的分組來源必須是圖片本身。
+      // 先偵測圖片中每一個「日期標題＋單一員工列」區塊。
+      const detectedCrops = await detectAiShiftEmployeeCrops(aiShiftPreview);
+      if (!detectedCrops.length) {
+        throw new Error("無法辨識每位員工的日期區塊，請確認圖片包含完整的日期標題列。");
+      }
 
-      // 只對勾選的員工做一次 Gemini request。
-      // 不再做第二次 verify，避免同一張圖片重複送 Gemini、拖慢速度與消耗 quota。
-      const requestGemini = async (mode, extra = {}) => {
+      const requestGemini = async (groupImage, keyOffset = 0) => {
         const response = await fetch("/api/ai-shift-import", {
           method: "POST",
           headers: { "Content-Type": "application/json; charset=utf-8" },
           body: JSON.stringify({
-            mode,
-            image: aiShiftPreview,
-            knownEmployees,
-            selectedEmployeeIds: [...selectedIds],
+            mode: "recognizeAll",
+            image: groupImage,
+            // 每個裁切批次都提供完整系統員工清單，讓 AI 只從已知工號中選出圖片實際看到的員工。
+            knownEmployees: allKnownEmployees,
+            selectedEmployeeIds: allKnownEmployees.map((person) => person.employeeId),
             year: String(year),
             month: String(month + 1),
-            ...extra,
+            keyOffset,
           }),
         });
 
@@ -1064,90 +1232,214 @@ export default function App() {
         return data;
       };
 
-      // 一次辨識：只接受使用者勾選的工號。
-      const first = await requestGemini("recognizeAll");
+      // 新格式：每位員工都有自己的「日期列＋員工列」。
+      // 重要：現在「一個員工區塊 = 一次 Gemini request」。
+      // 不再把 3 個區塊合併後交給 AI，也不再使用 sourceIndex。
+      // 這可以從根本上避免 D2729 被對到 G4547 這種「整個人抓成隔壁人」的問題。
+      const jobs = detectedCrops.map((crop, index) => ({
+        crop,
+        index,
+      }));
 
-      if (!Array.isArray(first?.employees)) {
-        throw new Error("AI 辨識沒有回傳有效結果。");
+      const resultsByIndex = new Array(jobs.length);
+      let nextJob = 0;
+      const worker = async (workerIndex) => {
+        while (true) {
+          const jobIndex = nextJob++;
+          if (jobIndex >= jobs.length) return;
+          const job = jobs[jobIndex];
+          const cropImage = await cropAiImage(aiShiftPreview, job.crop);
+          const result = await requestGemini(cropImage, (job.index + workerIndex) % 5);
+
+          // 紅色「休」只從同一個員工自己的 crop 計算。
+          // 不存在跨員工 sourceIndex，因此不可能把 G4547 的休假套到 D2729。
+          const redRestDates = await detectRedRestDatesFromCrop(aiShiftPreview, job.crop);
+          resultsByIndex[jobIndex] = { ...job, result, redRestDates };
+        }
+      };
+
+      // 4 個員工區塊並行，兼顧速度與 Gemini 容量。
+      const workerCount = Math.min(4, jobs.length);
+      await Promise.all(Array.from({ length: workerCount }, (_, index) => worker(index)));
+
+      const knownById = new Map(allKnownEmployees.map((person) => [person.employeeId, person]));
+      const employeeMap = new Map();
+      const warnings = [];
+
+      for (const job of resultsByIndex) {
+        const result = job?.result || {};
+        if (Array.isArray(result.warnings)) warnings.push(...result.warnings.map((item) => String(item)));
+
+        const returnedEmployees = Array.isArray(result.employees) ? result.employees : [];
+        const returned = new Map(
+          returnedEmployees.map((employee) => [
+            String(employee?.employeeId || "").trim().toUpperCase(),
+            { employee },
+          ])
+        );
+
+        // 這個 job 本身就只代表一位員工、一個 crop。
+        // 紅色「休」直接使用這個 crop 的本地像素結果，不再存在 sourceIndex 對錯人的可能。
+        for (const [employeeId, entry] of returned.entries()) {
+          const employee = entry.employee;
+          const deterministicRestDays = Array.isArray(job.redRestDates)
+            ? job.redRestDates
+            : [];
+          if (deterministicRestDays.length) {
+            const aiDays = Array.isArray(employee?.days) ? employee.days : [];
+            const aiNonRestDays = aiDays.filter((day) => String(day?.type || "").trim() !== "休" && !String(day?.marker || "").includes("休"));
+            employee.days = [
+              ...aiNonRestDays,
+              ...deterministicRestDays.map((day) => ({
+                date: `${String(result?.imageYear || year).padStart(4, "0")}-${String(result?.imageMonth || (month + 1)).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+                type: "休",
+                marker: "休",
+                columnHeader: `${result?.imageMonth || (month + 1)}/${day}`,
+                markers: ["休"],
+              })),
+            ];
+          }
+          if (!knownById.has(employeeId)) continue;
+          const previous = employeeMap.get(employeeId);
+          const mergedDays = [
+            ...(Array.isArray(previous?.days) ? previous.days : []),
+            ...(Array.isArray(employee?.days) ? employee.days : []),
+          ];
+          employeeMap.set(employeeId, {
+            employeeId,
+            name: knownById.get(employeeId)?.name || employee?.name || "",
+            days: mergedDays,
+          });
+        }
       }
 
-      const knownById = new Map(
-
-        knownEmployees.map((person) => [person.employeeId, person])
-      );
-
-      const rawEmployees = Array.isArray(first?.employees) ? first.employees : [];
-
-      const employees = rawEmployees
-        .map((employee) => {
-          const employeeId = String(employee?.employeeId || "").trim().toUpperCase();
-          const person = knownById.get(employeeId);
-          if (!person) return null;
-
-          const days = (Array.isArray(employee?.days) ? employee.days : [])
-            .map((day) => {
-              const rawType = String(day?.type || "").trim();
-              const rawMarker = String(day?.marker || "").trim();
-              const rawMarkers = Array.isArray(day?.markers) ? day.markers : [];
-              const markerText = [rawMarker, ...rawMarkers]
-                .map((value) => String(value || "").trim())
-                .filter(Boolean)
-                .join("/");
-
-              if (!day?.date) return null;
-
-              const hasOff = rawType === "休" || markerText.includes("休");
-              if (hasOff) {
-                return { date: String(day.date), type: "休", marker: "休" };
-              }
-
-              const supportedMarkers = ["半", "K12", "工程", "3F", "4F", "5F", "4A", "4B", "5A", "5B"];
-              const markers = [];
-              supportedMarkers.forEach((marker) => {
-                if (markerText.includes(marker)) {
-                  markers.push(marker === "半" ? "半天" : marker);
+      // 圖片月份優先：不要因為目前行事曆停在 8 月，就把上傳的 9 月圖片硬判成 8 月。
+      const imageMonthCounts = new Map();
+      const imageYearCounts = new Map();
+      for (const job of resultsByIndex) {
+        const result = job?.result || {};
+        const candidateMonth = Number(String(result?.imageMonth || "").replace(/\D/g, ""));
+        const candidateYear = Number(String(result?.imageYear || "").replace(/\D/g, ""));
+        if (candidateMonth >= 1 && candidateMonth <= 12) {
+          imageMonthCounts.set(candidateMonth, (imageMonthCounts.get(candidateMonth) || 0) + 1);
+        }
+        if (candidateYear >= 2000 && candidateYear <= 2100) {
+          imageYearCounts.set(candidateYear, (imageYearCounts.get(candidateYear) || 0) + 1);
+        }
+      }
+      // 如果 AI 沒回 imageMonth，從已辨識日期再推一次。
+      if (!imageMonthCounts.size) {
+        for (const job of resultsByIndex) {
+          const result = job?.result || {};
+          for (const employee of (Array.isArray(result.employees) ? result.employees : [])) {
+            for (const day of (Array.isArray(employee?.days) ? employee.days : [])) {
+              const match = String(day?.date || "").match(/^\d{4}-(\d{1,2})-\d{1,2}$/);
+              if (match) {
+                const candidateMonth = Number(match[1]);
+                if (candidateMonth >= 1 && candidateMonth <= 12) {
+                  imageMonthCounts.set(candidateMonth, (imageMonthCounts.get(candidateMonth) || 0) + 1);
                 }
-              });
-
-              const uniqueMarkers = [...new Set(markers)];
-              if (uniqueMarkers.length) {
-                return {
-                  date: String(day.date),
-                  type: "特殊",
-                  marker: uniqueMarkers.join("/"),
-                };
               }
+            }
+          }
+        }
+      }
+      const detectedMonth = imageMonthCounts.size
+        ? [...imageMonthCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : Number(month + 1);
+      const detectedYear = imageYearCounts.size
+        ? [...imageYearCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : Number(year);
 
-              return null;
-            })
-            .filter(Boolean);
+      const targetEmployees = allKnownEmployees
+        .filter((person) => selectedIds.has(person.employeeId))
+        .map((person) => employeeMap.get(person.employeeId) || {
+          employeeId: person.employeeId,
+          name: person.name || "",
+          days: [],
+        });
 
-          return {
-            employeeId,
-            name: person.name || employee.name || "",
-            matched: true,
-            days,
-          };
-        })
-        .filter(Boolean)
-        .filter((employee) => employee.days.length > 0);
+      const employees = targetEmployees.map((employee) => {
+        const employeeId = String(employee?.employeeId || "").trim().toUpperCase();
+        const person = knownById.get(employeeId);
+        if (!person) return null;
 
-      // 依系統員工順序排列，方便你逐人確認。
-      employees.sort((a, b) => {
-        const ai = knownEmployees.findIndex((person) => person.employeeId === a.employeeId);
-        const bi = knownEmployees.findIndex((person) => person.employeeId === b.employeeId);
-        return ai - bi;
+        const days = (Array.isArray(employee?.days) ? employee.days : [])
+          .map((day) => {
+            const rawType = String(day?.type || "").trim();
+            const rawMarker = String(day?.marker || "").trim();
+            const rawColumnHeader = String(day?.columnHeader || "").trim();
+            const rawMarkers = Array.isArray(day?.markers) ? day.markers : [];
+            const markerText = [rawMarker, rawColumnHeader, ...rawMarkers]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+              .join("/");
+
+            if (!day?.date && !rawColumnHeader) return null;
+
+            let normalizedDate = String(day?.date || "").trim();
+            const headerMatch = rawColumnHeader.match(/(?:^|\D)(1[0-2]|[1-9])\s*[/.-]\s*(3[01]|[12]\d|0?[1-9])(?:$|\D)/);
+            if (headerMatch) {
+              // 上方欄位標題是最高優先權；不要因為目前行事曆停在 8 月而忽略 9 月圖片。
+              normalizedDate = `${detectedYear}-${String(Number(headerMatch[1])).padStart(2, "0")}-${String(Number(headerMatch[2])).padStart(2, "0")}`;
+            }
+
+            // 硬限制改為「圖片實際月份」：如果上傳的是 9 月圖片，即使畫面目前停在 8 月，也只接受 9 月。
+            const dateMatch = normalizedDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (!dateMatch) return null;
+            const dateYear = Number(dateMatch[1]);
+            const dateMonth = Number(dateMatch[2]);
+            const dateDay = Number(dateMatch[3]);
+            const maxDay = new Date(Number(detectedYear), Number(detectedMonth), 0).getDate();
+            if (dateYear !== Number(detectedYear) || dateMonth !== Number(detectedMonth) || dateDay < 1 || dateDay > maxDay) return null;
+            normalizedDate = `${Number(detectedYear)}-${String(detectedMonth).padStart(2, "0")}-${String(dateDay).padStart(2, "0")}`;
+
+            const hasOff = rawType === "休" || markerText.includes("休");
+            if (hasOff) return { date: normalizedDate, type: "休", marker: "休" };
+
+            const supportedMarkers = ["半", "K12", "工程", "3F", "4F", "5F", "4A", "4B", "5A", "5B"];
+            const markers = [];
+            supportedMarkers.forEach((marker) => {
+              if (markerText.includes(marker)) markers.push(marker === "半" ? "半天" : marker);
+            });
+            const uniqueMarkers = [...new Set(markers)];
+            if (uniqueMarkers.length) {
+              return { date: normalizedDate, type: "特殊", marker: uniqueMarkers.join("/") };
+            }
+            return null;
+          })
+          .filter(Boolean);
+
+        // 同一員工同一天若 AI 重複回傳，只保留一筆；休優先。
+        const dayMap = new Map();
+        for (const day of days) {
+          const previous = dayMap.get(day.date);
+          if (!previous || day.type === "休") dayMap.set(day.date, day);
+        }
+
+        return {
+          employeeId,
+          name: person.name || employee.name || "",
+          matched: true,
+          days: [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+        };
+      }).filter((employee) => employee && Array.isArray(employee.days) && employee.days.length > 0);
+
+      const uniqueWarnings = [];
+      warnings.forEach((warning) => {
+        const text = String(warning || "").trim();
+        if (!text) return;
+        // 「圖片裡的人不在系統名單」在 3 人分組辨識中是正常情況，因為他們只用來定位上下列。
+        if (/not in the allowed|不在.*(系統|清單)|allowed system employees|系統員工清單/i.test(text)) return;
+        if (!uniqueWarnings.includes(text)) uniqueWarnings.push(text);
       });
 
-      const warnings = [];
-      (Array.isArray(first?.warnings) ? first.warnings : []).forEach((item) => warnings.push(String(item)));
-
       const results = {
-        year: String(year),
-        month: String(month + 1),
+        year: String(detectedYear),
+        month: String(detectedMonth),
         employees,
-        warnings,
-        recognitionMode: "指定員工單次辨識",
+        warnings: uniqueWarnings,
+        recognitionMode: "每人獨立日期列＋區塊索引校正＋休假像素定位",
       };
 
       setAiShiftResults(results);
