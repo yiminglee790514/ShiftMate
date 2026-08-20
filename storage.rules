@@ -1,0 +1,14 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /monthPhotos/{monthKey}/{fileName} {
+      allow read: if request.auth != null;
+      allow write, delete: if request.auth != null
+        && (
+          request.auth.token.email.lower() == "admin@shiftmate-login.com"
+          || request.auth.token.email.lower() == "d7445@shiftmate-login.com"
+        );
+    }
+  }
+}

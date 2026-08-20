@@ -384,6 +384,106 @@ async function loadShiftUser(db, user) {
   return null;
 }
 
+
+function getMonthKey(year, monthIndex) {
+  return `${year}-${pad(monthIndex + 1)}`;
+}
+
+function normalizeEmployeeId(value) {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+function normalizeAttendanceCellText(cell) {
+  const raw = String(cell ?? "").trim();
+  if (!raw) return [];
+
+  // 一格可能同時有多個標記，例如「半/K12」。
+  // 依照使用者規則：半 → 半天，其餘照 Excel 原字保留。
+  return raw
+    .split(/[\/／、,\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => item === "半" ? "半天" : item);
+}
+
+function parseAttendanceWorkbook(arrayBuffer) {
+  if (!window.XLSX) {
+    throw new Error("Excel 解析元件尚未載入，請重新整理頁面後再試。");
+  }
+
+  const workbook = window.XLSX.read(arrayBuffer, { type: "array", cellDates: false });
+  const employees = {};
+
+  workbook.SheetNames.forEach((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: "",
+      raw: false,
+    });
+
+    let dateHeaders = null;
+
+    rows.forEach((row) => {
+      const first = String(row?.[0] ?? "").trim();
+
+      if (first === "日期") {
+        dateHeaders = Array.from({ length: Math.max(0, row.length - 1) }, (_, index) => {
+          const value = String(row[index + 1] ?? "").trim();
+          const match = value.match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})$/);
+          return match
+            ? { column: index + 1, month: Number(match[1]), day: Number(match[2]) }
+            : null;
+        });
+        return;
+      }
+
+      if (!dateHeaders || !first) return;
+
+      const employeeId = normalizeEmployeeId(first);
+      if (!employeeId || employeeId === "日期") return;
+
+      const events = {};
+      dateHeaders.forEach((header) => {
+        if (!header) return;
+        const cell = String(row[header.column] ?? "").trim();
+        const texts = normalizeAttendanceCellText(cell);
+        if (!texts.length) return;
+
+        events[String(header.day)] = texts;
+      });
+
+      if (!employees[employeeId]) {
+        employees[employeeId] = { employeeId, name: "", events: {} };
+      }
+
+      employees[employeeId].events = {
+        ...(employees[employeeId].events || {}),
+        ...events,
+      };
+    });
+  });
+
+  const employeeList = Object.values(employees);
+  if (!employeeList.length) {
+    throw new Error("Excel 裡找不到可用的員工資料，請確認格式為「日期列＋工號列」。");
+  }
+
+  // 相容舊資料：同時保留 days，方便舊月份資料繼續使用。
+  employeeList.forEach((employee) => {
+    employee.days = Object.entries(employee.events || {})
+      .filter(([, texts]) => texts.some((text) => text === "休"))
+      .map(([day]) => Number(day))
+      .sort((a, b) => a - b);
+  });
+
+  return {
+    employees,
+    employeeCount: employeeList.length,
+    sourceSheetNames: workbook.SheetNames,
+  };
+}
+
 export default function App() {
   const today = new Date();
 
@@ -428,9 +528,6 @@ export default function App() {
   const [customEvents, setCustomEvents] = useState({});
   // 使用者明確刪除的自訂行程日期，避免舊的雲端資料在重新整理時重新出現。
   const [deletedCustomEventDates, setDeletedCustomEventDates] = useState([]);
-  // AI 發布休假後的提示時間與月份。只有該月份有 AI 帶入休假時才顯示。
-  const [aiLeaveImportedAt, setAiLeaveImportedAt] = useState(null);
-  const [aiLeaveImportedMonth, setAiLeaveImportedMonth] = useState("");
 
   const [showInput, setShowInput] = useState(false);
   const [inputDate, setInputDate] = useState("");
@@ -455,20 +552,33 @@ export default function App() {
   const [globalEventForm, setGlobalEventForm] = useState({ date: "", text: "" });
   const [holidayForm, setHolidayForm] = useState({ id: "", date: "", name: "" });
 
-  // 管理者：AI 排班圖片辨識（第一階段只辨識，不寫入員工行事曆）
-  const [aiShiftFile, setAiShiftFile] = useState(null);
-  const [aiShiftPreview, setAiShiftPreview] = useState("");
-  const [aiShiftResults, setAiShiftResults] = useState(null);
-  const [aiShiftBusy, setAiShiftBusy] = useState(false);
-  const [aiShiftError, setAiShiftError] = useState("");
-  const [aiPublishEmployeeId, setAiPublishEmployeeId] = useState("");
-  const [aiPublishBusy, setAiPublishBusy] = useState(false);
-  const [aiPublishMessage, setAiPublishMessage] = useState("");
-  const [aiShiftGroups, setAiShiftGroups] = useState([]);
-  const [aiShiftGroupId, setAiShiftGroupId] = useState("");
-  const [aiShiftGroupName, setAiShiftGroupName] = useState("");
-  const [aiSelectedEmployeeIds, setAiSelectedEmployeeIds] = useState([]);
-  const [aiGroupBusy, setAiGroupBusy] = useState(false);
+  // Excel 休假資料與月份照片
+  const [excelLeaveDataByMonth, setExcelLeaveDataByMonth] = useState({});
+  const [showLoadLeave, setShowLoadLeave] = useState(false);
+  const [showLoadLeaveConfirm, setShowLoadLeaveConfirm] = useState(false);
+  const [loadLeaveItems, setLoadLeaveItems] = useState([]);
+  const [loadLeaveBusy, setLoadLeaveBusy] = useState(false);
+  const [loadLeaveError, setLoadLeaveError] = useState("");
+
+  const [showMonthPhotos, setShowMonthPhotos] = useState(false);
+  const [monthPhotos, setMonthPhotos] = useState([]);
+  const [monthPhotosBusy, setMonthPhotosBusy] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoScale, setPhotoScale] = useState(1);
+  const [photoOffset, setPhotoOffset] = useState({ x: 0, y: 0 });
+  const [photoDragging, setPhotoDragging] = useState(false);
+  const [photoDragStart, setPhotoDragStart] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setPhotoScale(1);
+    setPhotoOffset({ x: 0, y: 0 });
+    setPhotoDragging(false);
+  }, [selectedPhoto]);
+
+  const [monthDataBusy, setMonthDataBusy] = useState(false);
+  const [monthDataMessage, setMonthDataMessage] = useState("");
+  const [monthDataInfo, setMonthDataInfo] = useState(null);
+  const [monthPhotoAdminBusy, setMonthPhotoAdminBusy] = useState(false);
 
   useEffect(() => {
     let unsubscribe = null;
@@ -483,8 +593,7 @@ export default function App() {
         if (!user) {
           setShiftUser(null);
           setCustomEvents({});
-          setAiLeaveImportedAt(null);
-          setAiLeaveImportedMonth("");
+          setExcelLeaveDataByMonth({});
           setGlobalEvents({});
           setHolidayOverrides({});
           setCustomEventsLoaded(true);
@@ -502,8 +611,7 @@ export default function App() {
           // 每位員工第一次登入時，自動把目前 Firebase Auth UID
           // 同步回 shiftUsers/{工號}。
           //
-          // 這是為了讓管理者之後可以用「工號 → UID」安全地把
-          // AI 辨識結果發布到正確員工的 users/{uid} 行事曆。
+          // 這是為了讓系統可以安全地把目前登入者的資料寫回自己的帳號文件。
           // 只同步「目前登入者自己的 UID」，不會替其他員工寫入 UID。
           if (
             profile?.employeeId &&
@@ -533,8 +641,6 @@ export default function App() {
             await auth.signOut();
             setShiftUser(null);
             setCustomEvents({});
-            setAiLeaveImportedAt(null);
-            setAiLeaveImportedMonth("");
             setCustomEventsLoaded(true);
             setAuthReady(true);
             return;
@@ -571,8 +677,18 @@ export default function App() {
 
           setCustomEvents(cleanedCustomEvents);
           setDeletedCustomEventDates(deletedCustomEventDates);
-          setAiLeaveImportedAt(calendarData?.aiLeaveImportedAt || null);
-          setAiLeaveImportedMonth(String(calendarData?.aiLeaveImportedMonth || ""));
+          setExcelLeaveDataByMonth(
+            calendarData?.excelLeaveDataByMonth && typeof calendarData.excelLeaveDataByMonth === "object"
+              ? calendarData.excelLeaveDataByMonth
+              : (calendarData?.excelLeaveDatesByMonth && typeof calendarData.excelLeaveDatesByMonth === "object"
+                ? Object.fromEntries(
+                    Object.entries(calendarData.excelLeaveDatesByMonth).map(([monthKey, days]) => [
+                      monthKey,
+                      (Array.isArray(days) ? days : []).map((day) => ({ day: Number(day), texts: ["休"] }))
+                    ])
+                  )
+                : {})
+          );
           setCustomEventsLoaded(true);
           setAuthReady(true);
         } catch (error) {
@@ -610,6 +726,7 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [firebaseUser, year]);
+
 
   const cells = useMemo(
     () => getCalendarCells(year, month),
@@ -671,28 +788,6 @@ export default function App() {
 
     return stats;
   }, [year, month, customEvents, statusMap]);
-
-  const aiLeaveNotice = useMemo(() => {
-    const currentMonthKey = `${year}-${pad(month + 1)}`;
-    if (!aiLeaveImportedAt || aiLeaveImportedMonth !== currentMonthKey) return "";
-
-    const date = aiLeaveImportedAt?.toDate
-      ? aiLeaveImportedAt.toDate()
-      : new Date(aiLeaveImportedAt);
-    if (Number.isNaN(date.getTime())) return "";
-
-    const formatted = new Intl.DateTimeFormat("zh-TW", {
-      timeZone: "Asia/Taipei",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date).replace(/-/g, "/").replace(/\s+/g, " ");
-
-    return `AI 辨識休假已於 ${formatted} 帶入，請確認`;
-  }, [year, month, aiLeaveImportedAt, aiLeaveImportedMonth]);
 
   function openLoginMenu() {
     setLoginError("");
@@ -943,778 +1038,451 @@ export default function App() {
   }
 
 
-  function resetAiShiftImport() {
-    setAiShiftFile(null);
-    setAiShiftPreview("");
-    setAiShiftResults(null);
-    setAiShiftError("");
-    setAiSelectedEmployeeIds([]);
-    setAiPublishEmployeeId("");
-    setAiPublishMessage("");
-    setAiShiftGroupId("");
-    setAiShiftGroupName("");
+
+  function formatMonthDataTime(value) {
+    const date = value?.toDate ? value.toDate() : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("zh-TW", {
+      timeZone: "Asia/Taipei",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date).replace(/-/g, "/");
   }
 
-  function handleAiShiftFile(event) {
+  async function loadMonthDataInfo() {
+    if (!isAdmin) return;
+    try {
+      const { db } = getFirebaseServices();
+      const key = getMonthKey(year, month);
+      const doc = await db.collection("attendanceMonths").doc(key).get();
+      setMonthDataInfo(doc.exists ? { id: doc.id, ...doc.data() } : null);
+      await loadMonthPhotosForMonth(year, month);
+    } catch (error) {
+      console.error("讀取月份資料失敗：", error);
+      setMonthDataInfo(null);
+    }
+  }
+
+  async function handleAttendanceExcelUpload(event) {
     const file = event.target.files?.[0];
-    if (!file) return;
+    event.target.value = "";
+    if (!file || !isAdmin) return;
 
-    if (!file.type.startsWith("image/")) {
-      setAiShiftError("請上傳 JPG、PNG 或其他圖片檔案。");
-      return;
+    setMonthDataBusy(true);
+    setMonthDataMessage("");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsed = parseAttendanceWorkbook(buffer);
+      const expectedMonth = month + 1;
+
+      // 確認所有日期列都屬於目前管理者選擇的月份。
+      const workbook = window.XLSX.read(buffer, { type: "array", cellDates: false });
+      const invalidMonthCells = [];
+      workbook.SheetNames.forEach((sheetName) => {
+        const rows = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+          header: 1,
+          defval: "",
+          raw: false,
+        });
+        rows.forEach((row) => {
+          if (String(row?.[0] ?? "").trim() !== "日期") return;
+          row.slice(1).forEach((value) => {
+            const match = String(value ?? "").trim().match(/^(\d{1,2})\s*[/.-]\s*(\d{1,2})$/);
+            if (match && Number(match[1]) !== expectedMonth) invalidMonthCells.push(String(value));
+          });
+        });
+      });
+
+      if (invalidMonthCells.length) {
+        throw new Error(`Excel 日期月份不是 ${expectedMonth} 月，請確認你現在管理的是 ${year} 年 ${expectedMonth} 月。`);
+      }
+
+      const { db } = getFirebaseServices();
+      const key = getMonthKey(year, month);
+      const uploadedAt = new Date();
+      await db.collection("attendanceMonths").doc(key).set({
+        year,
+        month: expectedMonth,
+        sourceFileName: file.name,
+        uploadedAt,
+        employeeCount: parsed.employeeCount,
+        employees: parsed.employees,
+      }, { merge: true });
+
+      setMonthDataInfo({
+        id: key,
+        year,
+        month: expectedMonth,
+        sourceFileName: file.name,
+        uploadedAt,
+        employeeCount: parsed.employeeCount,
+        employees: parsed.employees,
+      });
+      setMonthDataMessage(`已上傳 ${year}年${expectedMonth}月休假資料，共 ${parsed.employeeCount} 位員工。`);
+    } catch (error) {
+      console.error("上傳休假 Excel 失敗：", error);
+      setMonthDataMessage(error?.message || "Excel 上傳失敗。");
+    } finally {
+      setMonthDataBusy(false);
     }
-
-    if (file.size > 12 * 1024 * 1024) {
-      setAiShiftError("圖片太大，請使用 12MB 以下的圖片。");
-      return;
-    }
-
-    setAiShiftError("");
-    setAiShiftResults(null);
-    setAiShiftFile(file);
-
-    const reader = new FileReader();
-    reader.onload = () => setAiShiftPreview(String(reader.result || ""));
-    reader.onerror = () => setAiShiftError("圖片讀取失敗，請重新選擇。");
-    reader.readAsDataURL(file);
   }
 
-  function loadImageForAi(src) {
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error("圖片載入失敗，無法進行 AI 分列。"));
-      image.src = src;
+  async function removeAttendanceExcel() {
+    if (!isAdmin) return;
+    const key = getMonthKey(year, month);
+    if (!window.confirm(`確定要移除 ${year}年${month + 1}月的休假 Excel 資料嗎？\n移除後，員工將無法從這個月份載入休假。`)) return;
+
+    setMonthDataBusy(true);
+    setMonthDataMessage("");
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("attendanceMonths").doc(key).delete();
+      setMonthDataInfo(null);
+      setMonthDataMessage(`${year}年${month + 1}月休假資料已移除。`);
+    } catch (error) {
+      setMonthDataMessage(error?.message || "移除休假資料失敗。");
+    } finally {
+      setMonthDataBusy(false);
+    }
+  }
+
+  async function loadMonthPhotosForMonth(targetYear = year, targetMonth = month) {
+    try {
+      const { db } = getFirebaseServices();
+      const key = getMonthKey(targetYear, targetMonth);
+      const snapshot = await db.collection("monthPhotos").doc(key).collection("items").orderBy("uploadedAt", "desc").get();
+      const photos = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setMonthPhotos(photos);
+      return photos;
+    } catch (error) {
+      console.error("讀取月份照片失敗：", error);
+      setMonthPhotos([]);
+      return [];
+    }
+  }
+
+  async function openMonthPhotos() {
+    setSelectedPhoto(null);
+    setShowMonthPhotos(true);
+    setMonthPhotosBusy(true);
+    await loadMonthPhotosForMonth(year, month);
+    setMonthPhotosBusy(false);
+  }
+
+  async function imageFileToFirestoreDataUrl(file) {
+    if (!file?.type?.startsWith("image/")) {
+      throw new Error(`「${file?.name || "檔案"}」不是圖片檔案。`);
+    }
+
+    const readAsDataUrl = () => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`讀取「${file.name}」失敗。`));
+      reader.readAsDataURL(file);
     });
-  }
 
-  async function cropAiImage(src, crop) {
-    const image = await loadImageForAi(src);
-    const sourceWidth = image.naturalWidth || image.width;
-    const sourceHeight = image.naturalHeight || image.height;
+    // 先嘗試縮放到適合 Firestore 儲存的大小。
+    const sourceUrl = await readAsDataUrl();
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`無法讀取圖片「${file.name}」。`));
+      img.src = sourceUrl;
+    });
 
-    const x = Math.max(0, Math.floor(crop.x || 0));
-    const y = Math.max(0, Math.floor(crop.y || 0));
-    const width = Math.min(sourceWidth - x, Math.max(1, Math.floor(crop.width)));
-    const height = Math.min(sourceHeight - y, Math.max(1, Math.floor(crop.height)));
-    const scale = Math.min(4, Math.max(1, 1800 / Math.max(width, height)));
-
+    const maxDimension = 1800;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
+    canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
 
-    const context = canvas.getContext("2d", { alpha: false });
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
-
-    return canvas.toDataURL("image/jpeg", 0.92);
-  }
-
-  async function detectAiShiftEmployeeCrops(src) {
-    const image = await loadImageForAi(src);
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.min(width, 1400);
-    canvas.height = Math.max(1, Math.round(height * (canvas.width / width)));
-    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("瀏覽器不支援圖片處理。");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    const warmRows = [];
-    const sampleStep = Math.max(1, Math.floor(canvas.width / 700));
+    // Firestore 單一文件約 1 MiB 上限；照片本體預留安全空間。
+    const qualities = [0.82, 0.74, 0.66, 0.58];
+    let dataUrl = "";
 
-    for (let y = 0; y < canvas.height; y += 1) {
-      let warm = 0;
-      let samples = 0;
-      for (let x = 0; x < canvas.width; x += sampleStep) {
-        const i = (y * canvas.width + x) * 4;
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        if (r > 150 && g > 125 && r - b > 18 && g - b > 8) warm += 1;
-        samples += 1;
-      }
-      warmRows.push(samples ? warm / samples : 0);
+    for (const quality of qualities) {
+      dataUrl = canvas.toDataURL("image/jpeg", quality);
+      if (dataUrl.length <= 850000) break;
     }
 
-    // 新格式：每位員工都有自己的「日期列＋員工列」。
-    // 每一條淡橘/淡黃日期列就是一個獨立員工區塊的起點。
-    const bands = [];
-    let start = -1;
-    for (let y = 0; y < warmRows.length; y += 1) {
-      const hit = warmRows[y] >= 0.42;
-      if (hit && start < 0) start = y;
-      if ((!hit || y === warmRows.length - 1) && start >= 0) {
-        const end = hit && y === warmRows.length - 1 ? y : y - 1;
-        if (end - start + 1 >= 2) bands.push({ start, end });
-        start = -1;
-      }
+    if (dataUrl.length > 850000) {
+      // 最後再縮小一次，避免 Firestore 文件超過限制。
+      const smaller = document.createElement("canvas");
+      const ratio = 1200 / Math.max(canvas.width, canvas.height);
+      smaller.width = Math.max(1, Math.round(canvas.width * Math.min(1, ratio)));
+      smaller.height = Math.max(1, Math.round(canvas.height * Math.min(1, ratio)));
+      const smallerContext = smaller.getContext("2d");
+      if (!smallerContext) throw new Error("瀏覽器不支援圖片處理。");
+      smallerContext.fillStyle = "#ffffff";
+      smallerContext.fillRect(0, 0, smaller.width, smaller.height);
+      smallerContext.drawImage(canvas, 0, 0, smaller.width, smaller.height);
+      dataUrl = smaller.toDataURL("image/jpeg", 0.58);
     }
 
-    const merged = [];
-    for (const band of bands) {
-      const last = merged[merged.length - 1];
-      if (last && band.start - last.end <= 3) last.end = band.end;
-      else merged.push({ ...band });
+    if (dataUrl.length > 900000) {
+      throw new Error(`「${file.name}」圖片太大，請先縮小圖片後再上傳。`);
     }
 
-    const candidates = merged.filter((band) => {
-      const h = band.end - band.start + 1;
-      return h >= 3 && h <= Math.max(28, canvas.height * 0.12);
-    });
-
-    // 每一個日期標題列到下一個日期標題列，就是「一位員工」的完整區塊。
-    // 不再使用等距 3 人 fallback，避免把不同員工的資料切在一起。
-    return candidates.map((band, index) => {
-      const next = candidates[index + 1];
-      const y = Math.max(0, Math.floor((band.start / canvas.height) * height) - 2);
-      const nextY = next
-        ? Math.floor((next.start / canvas.height) * height)
-        : height;
-      return {
-        x: 0,
-        y,
-        width,
-        height: Math.min(height - y, Math.max(1, nextY - y + 1)),
-      };
-    });
+    return dataUrl;
   }
 
-  async function detectRedRestDatesFromCrop(src, crop) {
-    // 「休」在排班圖中固定是紅字；對紅字日期做一次本地像素定位，
-    // 用來修正 Gemini 偶爾左右偏一格的情況。特殊標記仍交給 Gemini。
-    const image = await loadImageForAi(src);
-    const sourceWidth = image.naturalWidth || image.width;
-    const sourceHeight = image.naturalHeight || image.height;
-    const x = Math.max(0, Math.floor(crop.x || 0));
-    const y = Math.max(0, Math.floor(crop.y || 0));
-    const width = Math.min(sourceWidth - x, Math.max(1, Math.floor(crop.width)));
-    const height = Math.min(sourceHeight - y, Math.max(1, Math.floor(crop.height)));
+  async function handleMonthPhotoUpload(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length || !isAdmin) return;
 
-    const scale = Math.min(2, Math.max(1, 1400 / Math.max(width, height)));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
-
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    const startY = Math.floor(canvas.height * 0.42);
-    const redByX = new Array(canvas.width).fill(0);
-
-    for (let py = startY; py < canvas.height; py += 1) {
-      for (let px = 0; px < canvas.width; px += 1) {
-        const i = (py * canvas.width + px) * 4;
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        // 避免把淡橘色背景/網格誤認成紅字。
-        if (r >= 150 && r - g >= 70 && r - b >= 55 && g < 130) redByX[px] += 1;
-      }
-    }
-
-    // 把相鄰紅字像素合成一個「休」字群。
-    const clusters = [];
-    let clusterStart = -1;
-    for (let px = 0; px < redByX.length; px += 1) {
-      const hit = redByX[px] >= 1;
-      if (hit && clusterStart < 0) clusterStart = px;
-      if ((!hit || px === redByX.length - 1) && clusterStart >= 0) {
-        const end = hit && px === redByX.length - 1 ? px : px - 1;
-        if (end - clusterStart + 1 >= Math.max(2, Math.round(scale * 2))) {
-          clusters.push({ start: clusterStart, end });
-        }
-        clusterStart = -1;
-      }
-    }
-
-    // 第一欄是工號欄；剩下 30 欄等寬。用 crop 的實際寬度估算資料區，
-    // 不依賴固定像素，換圖片尺寸也能使用。
-    const employeeColumnRatio = 0.078;
-    const dataStart = canvas.width * employeeColumnRatio;
-    const dataWidth = canvas.width - dataStart;
-    const result = new Set();
-
-    for (const cluster of clusters) {
-      const centerX = (cluster.start + cluster.end) / 2;
-      if (centerX < dataStart) continue;
-      const rawIndex = Math.round(((centerX - dataStart) / dataWidth) * 30 - 0.5);
-      const day = rawIndex + 1;
-      if (day >= 1 && day <= 30) result.add(day);
-    }
-
-    return [...result].sort((a, b) => a - b);
-  }
-
-  async function combineAiCropImages(cropImages) {
-    const images = await Promise.all(cropImages.map((src) => loadImageForAi(src)));
-    if (!images.length) throw new Error("沒有可供 AI 辨識的員工區塊。");
-
-    const gap = 18;
-    const width = Math.max(...images.map((image) => image.naturalWidth || image.width));
-    const height = images.reduce((sum, image) => sum + (image.naturalHeight || image.height), 0) + gap * (images.length - 1);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d", { alpha: false });
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, width, height);
-
-    let y = 0;
-    for (const image of images) {
-      const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = image.naturalHeight || image.height;
-      context.drawImage(image, 0, y, imageWidth, imageHeight);
-      y += imageHeight + gap;
-    }
-
-    return canvas.toDataURL("image/jpeg", 0.92);
-  }
-
-  async function runAiShiftRecognition() {
-    if (!aiShiftPreview) {
-      setAiShiftError("請先上傳排班圖片。");
-      return;
-    }
-
-    setAiShiftBusy(true);
-    setAiShiftError("");
-    setAiShiftResults(null);
+    setMonthPhotoAdminBusy(true);
+    setMonthDataMessage("");
 
     try {
-      const allKnownEmployees = adminPeople.map((person) => ({
-        employeeId: String(person.employeeId || "").trim().toUpperCase(),
-        name: person.name || "",
-      })).filter((person) => person.employeeId);
+      const { db } = getFirebaseServices();
+      const key = getMonthKey(year, month);
+      let added = 0;
 
-      if (!allKnownEmployees.length) {
-        throw new Error("系統目前沒有可比對的員工資料。");
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+
+        const dataUrl = await imageFileToFirestoreDataUrl(file);
+        const photoId = `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        await db.collection("monthPhotos").doc(key).collection("items").doc(photoId).set({
+          name: file.name,
+          dataUrl,
+          uploadedAt: new Date(),
+          ownerUid: firebaseUser?.uid || "",
+        });
+
+        added += 1;
       }
 
-      const selectedIds = new Set(
-        aiSelectedEmployeeIds.map((value) => String(value || "").trim().toUpperCase()).filter(Boolean)
+      await loadMonthPhotosForMonth(year, month);
+      setMonthDataMessage(
+        added
+          ? `已新增 ${added} 張${year}年${month + 1}月出勤表照片。`
+          : "沒有可上傳的圖片。"
       );
-      if (!selectedIds.size) throw new Error("請先勾選要辨識的員工。");
-
-      // 這裡不能依系統工號排序來硬切 3 人一組；Firebase 的 employeeId 是排序過的，
-      // 和圖片上的實際 3 人分組沒有關係。真正的分組來源必須是圖片本身。
-      // 先偵測圖片中每一個「日期標題＋單一員工列」區塊。
-      const detectedCrops = await detectAiShiftEmployeeCrops(aiShiftPreview);
-      if (!detectedCrops.length) {
-        throw new Error("無法辨識每位員工的日期區塊，請確認圖片包含完整的日期標題列。");
-      }
-
-      const requestGemini = async (groupImage, keyOffset = 0) => {
-        const response = await fetch("/api/ai-shift-import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-          body: JSON.stringify({
-            mode: "recognizeAll",
-            image: groupImage,
-            // 每個裁切批次都提供完整系統員工清單，讓 AI 只從已知工號中選出圖片實際看到的員工。
-            knownEmployees: allKnownEmployees,
-            selectedEmployeeIds: allKnownEmployees.map((person) => person.employeeId),
-            year: String(year),
-            month: String(month + 1),
-            keyOffset,
-          }),
-        });
-
-        const raw = await response.text();
-        let data = {};
-        try { data = JSON.parse(raw); } catch { data = {}; }
-        if (!response.ok) {
-          throw new Error(data?.error || `AI 辨識失敗（${response.status}）`);
-        }
-        return data;
-      };
-
-      // 新格式：每位員工都有自己的「日期列＋員工列」。
-      // 重要：現在「一個員工區塊 = 一次 Gemini request」。
-      // 不再把 3 個區塊合併後交給 AI，也不再使用 sourceIndex。
-      // 這可以從根本上避免 D2729 被對到 G4547 這種「整個人抓成隔壁人」的問題。
-      const jobs = detectedCrops.map((crop, index) => ({
-        crop,
-        index,
-      }));
-
-      const resultsByIndex = new Array(jobs.length);
-      let nextJob = 0;
-      const worker = async (workerIndex) => {
-        while (true) {
-          const jobIndex = nextJob++;
-          if (jobIndex >= jobs.length) return;
-          const job = jobs[jobIndex];
-          const cropImage = await cropAiImage(aiShiftPreview, job.crop);
-          const result = await requestGemini(cropImage, (job.index + workerIndex) % 5);
-
-          // 紅色「休」只從同一個員工自己的 crop 計算。
-          // 不存在跨員工 sourceIndex，因此不可能把 G4547 的休假套到 D2729。
-          const redRestDates = await detectRedRestDatesFromCrop(aiShiftPreview, job.crop);
-          resultsByIndex[jobIndex] = { ...job, result, redRestDates };
-        }
-      };
-
-      // 4 個員工區塊並行，兼顧速度與 Gemini 容量。
-      const workerCount = Math.min(4, jobs.length);
-      await Promise.all(Array.from({ length: workerCount }, (_, index) => worker(index)));
-
-      const knownById = new Map(allKnownEmployees.map((person) => [person.employeeId, person]));
-      const employeeMap = new Map();
-      const warnings = [];
-
-      for (const job of resultsByIndex) {
-        const result = job?.result || {};
-        if (Array.isArray(result.warnings)) warnings.push(...result.warnings.map((item) => String(item)));
-
-        const returnedEmployees = Array.isArray(result.employees) ? result.employees : [];
-        const returned = new Map(
-          returnedEmployees.map((employee) => [
-            String(employee?.employeeId || "").trim().toUpperCase(),
-            { employee },
-          ])
-        );
-
-        // 這個 job 本身就只代表一位員工、一個 crop。
-        // 紅色「休」直接使用這個 crop 的本地像素結果，不再存在 sourceIndex 對錯人的可能。
-        for (const [employeeId, entry] of returned.entries()) {
-          const employee = entry.employee;
-          const deterministicRestDays = Array.isArray(job.redRestDates)
-            ? job.redRestDates
-            : [];
-          if (deterministicRestDays.length) {
-            const aiDays = Array.isArray(employee?.days) ? employee.days : [];
-            const aiNonRestDays = aiDays.filter((day) => String(day?.type || "").trim() !== "休" && !String(day?.marker || "").includes("休"));
-            employee.days = [
-              ...aiNonRestDays,
-              ...deterministicRestDays.map((day) => ({
-                date: `${String(result?.imageYear || year).padStart(4, "0")}-${String(result?.imageMonth || (month + 1)).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
-                type: "休",
-                marker: "休",
-                columnHeader: `${result?.imageMonth || (month + 1)}/${day}`,
-                markers: ["休"],
-              })),
-            ];
-          }
-          if (!knownById.has(employeeId)) continue;
-          const previous = employeeMap.get(employeeId);
-          const mergedDays = [
-            ...(Array.isArray(previous?.days) ? previous.days : []),
-            ...(Array.isArray(employee?.days) ? employee.days : []),
-          ];
-          employeeMap.set(employeeId, {
-            employeeId,
-            name: knownById.get(employeeId)?.name || employee?.name || "",
-            days: mergedDays,
-          });
-        }
-      }
-
-      // 圖片月份優先：不要因為目前行事曆停在 8 月，就把上傳的 9 月圖片硬判成 8 月。
-      const imageMonthCounts = new Map();
-      const imageYearCounts = new Map();
-      for (const job of resultsByIndex) {
-        const result = job?.result || {};
-        const candidateMonth = Number(String(result?.imageMonth || "").replace(/\D/g, ""));
-        const candidateYear = Number(String(result?.imageYear || "").replace(/\D/g, ""));
-        if (candidateMonth >= 1 && candidateMonth <= 12) {
-          imageMonthCounts.set(candidateMonth, (imageMonthCounts.get(candidateMonth) || 0) + 1);
-        }
-        if (candidateYear >= 2000 && candidateYear <= 2100) {
-          imageYearCounts.set(candidateYear, (imageYearCounts.get(candidateYear) || 0) + 1);
-        }
-      }
-      // 如果 AI 沒回 imageMonth，從已辨識日期再推一次。
-      if (!imageMonthCounts.size) {
-        for (const job of resultsByIndex) {
-          const result = job?.result || {};
-          for (const employee of (Array.isArray(result.employees) ? result.employees : [])) {
-            for (const day of (Array.isArray(employee?.days) ? employee.days : [])) {
-              const match = String(day?.date || "").match(/^\d{4}-(\d{1,2})-\d{1,2}$/);
-              if (match) {
-                const candidateMonth = Number(match[1]);
-                if (candidateMonth >= 1 && candidateMonth <= 12) {
-                  imageMonthCounts.set(candidateMonth, (imageMonthCounts.get(candidateMonth) || 0) + 1);
-                }
-              }
-            }
-          }
-        }
-      }
-      const detectedMonth = imageMonthCounts.size
-        ? [...imageMonthCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-        : Number(month + 1);
-      const detectedYear = imageYearCounts.size
-        ? [...imageYearCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-        : Number(year);
-
-      const targetEmployees = allKnownEmployees
-        .filter((person) => selectedIds.has(person.employeeId))
-        .map((person) => employeeMap.get(person.employeeId) || {
-          employeeId: person.employeeId,
-          name: person.name || "",
-          days: [],
-        });
-
-      const employees = targetEmployees.map((employee) => {
-        const employeeId = String(employee?.employeeId || "").trim().toUpperCase();
-        const person = knownById.get(employeeId);
-        if (!person) return null;
-
-        const days = (Array.isArray(employee?.days) ? employee.days : [])
-          .map((day) => {
-            const rawType = String(day?.type || "").trim();
-            const rawMarker = String(day?.marker || "").trim();
-            const rawColumnHeader = String(day?.columnHeader || "").trim();
-            const rawMarkers = Array.isArray(day?.markers) ? day.markers : [];
-            const markerText = [rawMarker, rawColumnHeader, ...rawMarkers]
-              .map((value) => String(value || "").trim())
-              .filter(Boolean)
-              .join("/");
-
-            if (!day?.date && !rawColumnHeader) return null;
-
-            let normalizedDate = String(day?.date || "").trim();
-            const headerMatch = rawColumnHeader.match(/(?:^|\D)(1[0-2]|[1-9])\s*[/.-]\s*(3[01]|[12]\d|0?[1-9])(?:$|\D)/);
-            if (headerMatch) {
-              // 上方欄位標題是最高優先權；不要因為目前行事曆停在 8 月而忽略 9 月圖片。
-              normalizedDate = `${detectedYear}-${String(Number(headerMatch[1])).padStart(2, "0")}-${String(Number(headerMatch[2])).padStart(2, "0")}`;
-            }
-
-            // 硬限制改為「圖片實際月份」：如果上傳的是 9 月圖片，即使畫面目前停在 8 月，也只接受 9 月。
-            const dateMatch = normalizedDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-            if (!dateMatch) return null;
-            const dateYear = Number(dateMatch[1]);
-            const dateMonth = Number(dateMatch[2]);
-            const dateDay = Number(dateMatch[3]);
-            const maxDay = new Date(Number(detectedYear), Number(detectedMonth), 0).getDate();
-            if (dateYear !== Number(detectedYear) || dateMonth !== Number(detectedMonth) || dateDay < 1 || dateDay > maxDay) return null;
-            normalizedDate = `${Number(detectedYear)}-${String(detectedMonth).padStart(2, "0")}-${String(dateDay).padStart(2, "0")}`;
-
-            const hasOff = rawType === "休" || markerText.includes("休");
-            if (hasOff) return { date: normalizedDate, type: "休", marker: "休" };
-
-            const supportedMarkers = ["半", "K12", "工程", "3F", "4F", "5F", "4A", "4B", "5A", "5B"];
-            const markers = [];
-            supportedMarkers.forEach((marker) => {
-              if (markerText.includes(marker)) markers.push(marker === "半" ? "半天" : marker);
-            });
-            const uniqueMarkers = [...new Set(markers)];
-            if (uniqueMarkers.length) {
-              return { date: normalizedDate, type: "特殊", marker: uniqueMarkers.join("/") };
-            }
-            return null;
-          })
-          .filter(Boolean);
-
-        // 同一員工同一天若 AI 重複回傳，只保留一筆；休優先。
-        const dayMap = new Map();
-        for (const day of days) {
-          const previous = dayMap.get(day.date);
-          if (!previous || day.type === "休") dayMap.set(day.date, day);
-        }
-
-        return {
-          employeeId,
-          name: person.name || employee.name || "",
-          matched: true,
-          days: [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
-        };
-      }).filter((employee) => employee && Array.isArray(employee.days) && employee.days.length > 0);
-
-      const uniqueWarnings = [];
-      warnings.forEach((warning) => {
-        const text = String(warning || "").trim();
-        if (!text) return;
-        // 「圖片裡的人不在系統名單」在 3 人分組辨識中是正常情況，因為他們只用來定位上下列。
-        if (/not in the allowed|不在.*(系統|清單)|allowed system employees|系統員工清單/i.test(text)) return;
-        if (!uniqueWarnings.includes(text)) uniqueWarnings.push(text);
-      });
-
-      const results = {
-        year: String(detectedYear),
-        month: String(detectedMonth),
-        employees,
-        warnings: uniqueWarnings,
-        recognitionMode: "每人獨立日期列＋區塊索引校正＋休假像素定位",
-      };
-
-      setAiShiftResults(results);
-      await createAiShiftGroupFromResults(results);
     } catch (error) {
-      console.error("AI 排班辨識失敗：", error);
-      setAiShiftError(error?.message || "AI 辨識失敗，請稍後再試。");
+      console.error("新增出勤表照片失敗：", error);
+      setMonthDataMessage(error?.message || "照片上傳失敗。");
     } finally {
-      setAiShiftBusy(false);
+      setMonthPhotoAdminBusy(false);
     }
   }
 
-  async function publishAiShiftEmployee() {
-    const employeeId = String(aiPublishEmployeeId || "").trim().toUpperCase();
-    if (!employeeId) {
-      setAiPublishMessage("請先選擇要發布的員工。");
+  async function removeMonthPhoto(photo) {
+    if (!isAdmin || !photo?.id) return;
+    if (!window.confirm(`確定要移除「${photo.name || "這張照片"}」嗎？`)) return;
+
+    setMonthPhotoAdminBusy(true);
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("monthPhotos")
+        .doc(getMonthKey(year, month))
+        .collection("items")
+        .doc(photo.id)
+        .delete();
+
+      await loadMonthPhotosForMonth(year, month);
+      setMonthDataMessage("照片已移除。");
+    } catch (error) {
+      setMonthDataMessage(error?.message || "照片移除失敗。");
+    } finally {
+      setMonthPhotoAdminBusy(false);
+    }
+  }
+
+  async function openLoadLeave() {
+    setLoadLeaveError("");
+    setLoadLeaveItems([]);
+    setShowLoadLeave(true);
+
+    if (!firebaseUser) {
+      setLoadLeaveError("請先登入後再載入休假。");
       return;
     }
 
-    const employee = Array.isArray(aiShiftResults?.employees)
-      ? aiShiftResults.employees.find(
-          (item) => String(item?.employeeId || "").trim().toUpperCase() === employeeId
+    setLoadLeaveBusy(true);
+    try {
+      const { db } = getFirebaseServices();
+      const key = getMonthKey(year, month);
+      const doc = await db.collection("attendanceMonths").doc(key).get();
+
+      if (!doc.exists) {
+        setLoadLeaveError("出勤資料尚未上傳");
+        return;
+      }
+
+      const data = doc.data() || {};
+      const employeeId = normalizeEmployeeId(
+        shiftUser?.employeeId || firebaseUser?.email?.split("@")[0] || ""
+      );
+      const employee = data?.employees?.[employeeId];
+
+      if (!employee) {
+        setLoadLeaveError("出勤資料尚未上傳");
+        return;
+      }
+
+      let items = Object.entries(employee.events || {})
+        .map(([day, texts]) => ({
+          day: Number(day),
+          texts: Array.isArray(texts)
+            ? texts.map((text) => text === "半" ? "半天" : String(text)).filter(Boolean)
+            : [],
+        }))
+        .filter((item) =>
+          item.day >= 1 &&
+          item.day <= getDaysInMonth(year, month) &&
+          item.texts.length
         )
-      : null;
+        .sort((a, b) => a.day - b.day);
 
-    if (!employee) {
-      setAiPublishMessage("找不到這位員工的 AI 辨識結果。");
-      return;
-    }
-
-    const person = adminPeople.find(
-      (item) => String(item?.employeeId || "").trim().toUpperCase() === employeeId
-    );
-
-    const currentLoginEmployeeId = String(
-      firebaseUser?.email?.split("@")[0] || ""
-    ).trim().toUpperCase();
-
-    const targetUid =
-      person?.uid ||
-      (
-        firebaseUser?.uid &&
-        currentLoginEmployeeId === employeeId
-          ? firebaseUser.uid
-          : ""
-      );
-
-    if (!targetUid) {
-      setAiPublishMessage(
-        `工號 ${employeeId} 目前沒有 Firebase UID，無法發布。請先讓該員工登入一次行事曆。`
-      );
-      return;
-    }
-
-    const days = Array.isArray(employee.days)
-      ? employee.days.filter((day) => day?.date)
-      : [];
-
-    if (!days.length) {
-      setAiPublishMessage(`${employeeId} 沒有可發布的日期。`);
-      return;
-    }
-
-    setAiPublishBusy(true);
-    setAiPublishMessage("");
-
-    try {
-      const { db } = getFirebaseServices();
-      const userRef = db.collection("users").doc(targetUid);
-      const userSnapshot = await userRef.get();
-      const existingData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-      const nextEvents = {
-        ...(existingData.customEvents && typeof existingData.customEvents === "object"
-          ? existingData.customEvents
-          : {}),
-      };
-      const nextDeletedDates = new Set(
-        Array.isArray(existingData.deletedCustomEventDates)
-          ? existingData.deletedCustomEventDates.map((value) => String(value))
-          : []
-      );
-
-      days.forEach((day) => {
-        const type = String(day.type || "").trim();
-        const marker = String(day.marker || "").trim();
-        const dateKey = String(day.date);
-        const value = type === "特殊" ? (marker || "特殊") : (type || "休");
-        nextEvents[dateKey] = value;
-        nextDeletedDates.delete(dateKey);
-      });
-
-      const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
-      const publishTime = new Date();
-
-      await userRef.set(
-        {
-          customEvents: nextEvents,
-          deletedCustomEventDates: [...nextDeletedDates],
-          ...(importedLeave
-            ? {
-                aiLeaveImportedAt: publishTime,
-                aiLeaveImportedMonth: `${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`,
-              }
-            : {}),
-          updatedAt: publishTime,
-        },
-        { merge: true }
-      );
-
-      if (importedLeave && targetUid === firebaseUser?.uid) {
-        setAiLeaveImportedAt(publishTime);
-        setAiLeaveImportedMonth(`${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`);
+      // 相容尚未更新前的舊 Excel 資料。
+      if (!items.length && Array.isArray(employee.days)) {
+        items = [...new Set(employee.days.map(Number))]
+          .filter((day) => day >= 1 && day <= getDaysInMonth(year, month))
+          .sort((a, b) => a - b)
+          .map((day) => ({ day, texts: ["休"] }));
       }
 
-      if (aiShiftGroupId) {
-        const currentGroup = aiShiftGroups.find((group) => group.id === aiShiftGroupId);
-        const publishedIds = new Set(
-          Array.isArray(currentGroup?.publishedEmployeeIds)
-            ? currentGroup.publishedEmployeeIds
-            : Array.isArray(aiShiftResults?.publishedEmployeeIds)
-              ? aiShiftResults.publishedEmployeeIds
-              : []
-        );
-        publishedIds.add(employeeId);
-        await saveAiShiftGroup(aiShiftGroupId, { publishedEmployeeIds: [...publishedIds] });
-        setAiShiftGroups((current) => current.map((group) =>
-          group.id === aiShiftGroupId ? { ...group, publishedEmployeeIds: [...publishedIds] } : group
-        ));
-        setAiShiftResults((current) => current ? { ...current, publishedEmployeeIds: [...publishedIds] } : current);
-      }
-
-      setAiPublishMessage(
-        `發布成功：${employeeId} ${employee.name || ""}，已寫入 ${days.length} 筆行事曆資料。`
-      );
+      setLoadLeaveItems(items);
     } catch (error) {
-      console.error("AI 排班指定員工發布失敗：", error);
-      setAiPublishMessage(error?.message || "發布失敗，請稍後再試。");
+      console.error("讀取休假資料失敗：", error);
+      setLoadLeaveError(error?.message || "休假資料讀取失敗。");
     } finally {
-      setAiPublishBusy(false);
+      setLoadLeaveBusy(false);
     }
   }
 
-  async function publishAiShiftAll() {
-    const employees = Array.isArray(aiShiftResults?.employees)
-      ? aiShiftResults.employees.filter((item) => item?.employeeId)
-      : [];
 
-    if (!employees.length) {
-      setAiPublishMessage("目前沒有可發布的 AI 辨識結果。");
-      return;
-    }
+  function closeLoadLeave() {
+    if (loadLeaveBusy) return;
+    setShowLoadLeave(false);
+    setShowLoadLeaveConfirm(false);
+    setLoadLeaveError("");
+  }
 
-    setAiPublishBusy(true);
-    setAiPublishMessage("");
+  function requestLoadLeaveConfirm() {
+    if (loadLeaveBusy || loadLeaveError) return;
+    setShowLoadLeaveConfirm(true);
+  }
 
+  async function confirmLoadLeave() {
+    if (!firebaseUser || !loadLeaveItems.length) return;
+
+    setLoadLeaveBusy(true);
     try {
+      const key = getMonthKey(year, month);
+      const previousImported = Array.isArray(excelLeaveDataByMonth[key])
+        ? excelLeaveDataByMonth[key]
+        : [];
+
+      const next = { ...customEvents };
+      const deletedNext = new Set(deletedCustomEventDates);
+
+      // 先移除上一次由 Excel 載入的內容，避免重新載入後留下舊標記。
+      previousImported.forEach((item) => {
+        const oldDay = Number(item?.day);
+        if (!oldDay) return;
+        const oldKey = dateKey(year, month, oldDay);
+        if (next[oldKey]) {
+          delete next[oldKey];
+          deletedNext.add(oldKey);
+        }
+      });
+
+      loadLeaveItems.forEach((item) => {
+        const day = Number(item.day);
+        if (!day) return;
+        const eventKey = dateKey(year, month, day);
+        const texts = Array.isArray(item.texts) ? item.texts.filter(Boolean) : [];
+
+        // 同一天多個標記上下排列，例如：
+        // 半/K12 → 半天\nK12
+        // 如果包含「休」，仍以「休」作為休假標記。
+        next[eventKey] = texts.includes("休") ? "休" : texts.join("\n");
+        deletedNext.delete(eventKey);
+      });
+
+      const importedNext = {
+        ...excelLeaveDataByMonth,
+        [key]: loadLeaveItems,
+      };
+
+      setCustomEvents(next);
+      setDeletedCustomEventDates([...deletedNext]);
+      setExcelLeaveDataByMonth(importedNext);
+
       const { db } = getFirebaseServices();
-      const publishResults = [];
-      const failedResults = [];
-      const publishedIds = new Set(
-        Array.isArray(aiShiftResults?.publishedEmployeeIds) ? aiShiftResults.publishedEmployeeIds : []
-      );
+      await db.collection("users").doc(firebaseUser.uid).set({
+        customEvents: next,
+        deletedCustomEventDates: [...deletedNext],
+        excelLeaveDataByMonth: importedNext,
+        updatedAt: new Date(),
+      }, { merge: true });
 
-      for (const employee of employees) {
-        const employeeId = String(employee.employeeId || "").trim().toUpperCase();
-        const person = adminPeople.find(
-          (item) =>
-            String(item?.employeeId || "").trim().toUpperCase() === employeeId
-        );
-
-        const currentLoginEmployeeId = String(
-          firebaseUser?.email?.split("@")[0] || ""
-        ).trim().toUpperCase();
-
-        const targetUid =
-          person?.uid ||
-          (
-            firebaseUser?.uid &&
-            currentLoginEmployeeId === employeeId
-              ? firebaseUser.uid
-              : ""
-          );
-
-        const days = Array.isArray(employee.days)
-          ? employee.days.filter((day) => day?.date)
-          : [];
-
-        if (!targetUid) {
-          failedResults.push(`${employeeId}：沒有 Firebase UID`);
-          continue;
-        }
-
-        if (!days.length) {
-          failedResults.push(`${employeeId}：沒有可發布的日期`);
-          continue;
-        }
-
-        try {
-          const userRef = db.collection("users").doc(targetUid);
-          const userSnapshot = await userRef.get();
-          const existingData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-          const nextEvents = {
-            ...(existingData.customEvents && typeof existingData.customEvents === "object"
-              ? existingData.customEvents
-              : {}),
-          };
-          const nextDeletedDates = new Set(
-            Array.isArray(existingData.deletedCustomEventDates)
-              ? existingData.deletedCustomEventDates.map((value) => String(value))
-              : []
-          );
-
-          days.forEach((day) => {
-            const type = String(day.type || "").trim();
-            const marker = String(day.marker || "").trim();
-            const dateKey = String(day.date);
-            const value = type === "特殊" ? (marker || "特殊") : (type || "休");
-            nextEvents[dateKey] = value;
-            nextDeletedDates.delete(dateKey);
-          });
-
-          const importedLeave = days.some((day) => String(day.type || "").trim() === "休");
-          const publishTime = new Date();
-          const importedMonth = `${aiShiftResults?.year || year}-${pad(Number(aiShiftResults?.month || month + 1))}`;
-
-          await userRef.set(
-            {
-              customEvents: nextEvents,
-              deletedCustomEventDates: [...nextDeletedDates],
-              ...(importedLeave
-                ? {
-                    aiLeaveImportedAt: publishTime,
-                    aiLeaveImportedMonth: importedMonth,
-                  }
-                : {}),
-              updatedAt: publishTime,
-            },
-            { merge: true }
-          );
-
-          if (importedLeave && targetUid === firebaseUser?.uid) {
-            setAiLeaveImportedAt(publishTime);
-            setAiLeaveImportedMonth(importedMonth);
-          }
-
-          publishResults.push(`${employeeId} ${employee.name || ""}：${days.length} 筆`);
-          publishedIds.add(employeeId);
-        } catch (error) {
-          console.error(`AI 排班發布失敗：${employeeId}`, error);
-          failedResults.push(`${employeeId}：${error?.message || "寫入失敗"}`);
-        }
-      }
-
-      if (aiShiftGroupId && publishedIds.size) {
-        await saveAiShiftGroup(aiShiftGroupId, { publishedEmployeeIds: [...publishedIds] });
-        setAiShiftGroups((current) => current.map((group) =>
-          group.id === aiShiftGroupId ? { ...group, publishedEmployeeIds: [...publishedIds] } : group
-        ));
-        setAiShiftResults((current) => current ? { ...current, publishedEmployeeIds: [...publishedIds] } : current);
-      }
-
-      if (failedResults.length) {
-        setAiPublishMessage(
-          `已發布 ${publishResults.length} 位；失敗 ${failedResults.length} 位：${failedResults.join("、")}`
-        );
-      } else {
-        setAiPublishMessage(
-          `全部發布成功：${publishResults.length} 位員工，共完成 AI 排班寫入。`
-        );
-      }
+      setShowLoadLeaveConfirm(false);
+      setShowLoadLeave(false);
     } catch (error) {
-      console.error("AI 排班全部發布失敗：", error);
-      setAiPublishMessage(error?.message || "全部發布失敗，請稍後再試。");
+      console.error("載入休假失敗：", error);
+      setLoadLeaveError(error?.message || "載入休假失敗。");
+      setShowLoadLeaveConfirm(false);
     } finally {
-      setAiPublishBusy(false);
+      setLoadLeaveBusy(false);
+    }
+  }
+
+
+  function changePhotoScale(delta) {
+    setPhotoScale((current) => Math.min(4, Math.max(0.5, Number((current + delta).toFixed(2)))));
+  }
+
+  function resetPhotoView() {
+    setPhotoScale(1);
+    setPhotoOffset({ x: 0, y: 0 });
+  }
+
+  function handlePhotoWheel(event) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.15 : -0.15;
+    changePhotoScale(delta);
+  }
+
+  function handlePhotoPointerDown(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setPhotoDragging(true);
+    setPhotoDragStart({
+      x: event.clientX - photoOffset.x,
+      y: event.clientY - photoOffset.y,
+    });
+  }
+
+  function handlePhotoPointerMove(event) {
+    if (!photoDragging) return;
+    setPhotoOffset({
+      x: event.clientX - photoDragStart.x,
+      y: event.clientY - photoDragStart.y,
+    });
+  }
+
+  function handlePhotoPointerUp(event) {
+    setPhotoDragging(false);
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // ignore
     }
   }
 
@@ -1728,6 +1496,11 @@ export default function App() {
     shiftUser?.role === "admin" ||
     firebaseUser?.email?.toLowerCase() === employeeIdToEmail("Admin").toLowerCase();
 
+  useEffect(() => {
+    if (!showAdminPanel || !isAdmin) return;
+    loadMonthDataInfo();
+  }, [showAdminPanel, isAdmin, year, month]);
+
   const currentHolidayMap = useMemo(
     () => buildHolidayMap(year, holidayOverrides),
     [year, holidayOverrides]
@@ -1738,169 +1511,18 @@ export default function App() {
     const { db } = getFirebaseServices();
     const snapshot = await db.collection("shiftUsers").orderBy("employeeId").get();
 
-    // 舊資料可能曾經留下重複的人員文件；畫面上同一工號只顯示一次。
     const uniquePeople = new Map();
     snapshot.docs.forEach((doc) => {
       const data = doc.data() || {};
       const employeeId = String(data.employeeId || doc.id || "").trim().toUpperCase();
       if (!employeeId || data.active === false) return;
 
-      // 優先使用「文件 ID = 工號」的正規文件。
       if (!uniquePeople.has(employeeId) || doc.id === employeeId) {
         uniquePeople.set(employeeId, { id: doc.id, ...data, employeeId });
       }
     });
 
     setAdminPeople(Array.from(uniquePeople.values()));
-  }
-
-  async function loadAiShiftGroups() {
-    if (!firebaseUser?.uid || !isAdmin) return;
-    try {
-      const { db } = getFirebaseServices();
-      const snapshot = await db.collection("aiShiftGroups")
-        .where("ownerUid", "==", firebaseUser.uid)
-        .get();
-
-      let groups = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-
-      // 相容舊版：如果新的獨立群組還沒有資料，就讀取舊 users/{uid}.aiShiftGroups。
-      if (!groups.length) {
-        const userSnapshot = await db.collection("users").doc(firebaseUser.uid).get();
-        const userData = userSnapshot.exists ? userSnapshot.data() || {} : {};
-        const oldGroups = Array.isArray(userData.aiShiftGroups) ? userData.aiShiftGroups : [];
-        groups = oldGroups.filter((group) => group?.id).map((group) => ({
-          ...group,
-          ownerUid: firebaseUser.uid,
-        }));
-
-        // 自動搬到新的獨立群組集合，避免之後再被 users 文件大小限制影響。
-        for (const group of groups) {
-          await db.collection("aiShiftGroups").doc(String(group.id)).set({
-            ...group,
-            ownerUid: firebaseUser.uid,
-            migratedFromLegacy: true,
-            updatedAt: new Date(),
-          }, { merge: true });
-        }
-      }
-
-      groups.sort((a, b) => {
-        const ta = a?.createdAt?.toMillis?.() || new Date(a?.createdAt || 0).getTime() || 0;
-        const tb = b?.createdAt?.toMillis?.() || new Date(b?.createdAt || 0).getTime() || 0;
-        return tb - ta;
-      });
-
-      setAiShiftGroups(groups);
-      setAiShiftError("");
-    } catch (error) {
-      console.error("讀取 AI 辨識群組失敗：", error);
-      setAiShiftGroups([]);
-      setAiShiftError(error?.message || "讀取 AI 辨識群組失敗。");
-    }
-  }
-
-  function makeAiGroupId() {
-    return `g_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  function selectAiShiftGroup(group) {
-    if (!group) return;
-    const employees = Array.isArray(group.employees) ? group.employees : [];
-    setAiShiftGroupId(group.id);
-    setAiShiftGroupName(group.name || "");
-    setAiShiftResults({
-      year: String(group.year || year),
-      month: String(group.month || month + 1),
-      employees,
-      warnings: Array.isArray(group.warnings) ? group.warnings : [],
-      recognitionMode: group.recognitionMode || "已保存的 AI 辨識結果",
-      groupId: group.id,
-      groupName: group.name || "",
-      publishedEmployeeIds: Array.isArray(group.publishedEmployeeIds) ? group.publishedEmployeeIds : [],
-    });
-    setAiPublishEmployeeId(employees[0]?.employeeId || "");
-    setAiPublishMessage("");
-    setAiShiftError("");
-  }
-
-  function toggleAiSelectedEmployee(employeeId) {
-    const id = String(employeeId || "").trim().toUpperCase();
-    setAiSelectedEmployeeIds((current) =>
-      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
-    );
-  }
-
-  function toggleAllAiEmployees() {
-    const allIds = adminPeople.map((person) => String(person?.employeeId || "").trim().toUpperCase()).filter(Boolean);
-    setAiSelectedEmployeeIds((current) => current.length === allIds.length ? [] : allIds);
-  }
-
-  async function saveAiShiftGroup(groupId, groupData) {
-    if (!firebaseUser?.uid) throw new Error("尚未登入，無法保存 AI 辨識群組。");
-    const { db } = getFirebaseServices();
-    await db.collection("aiShiftGroups").doc(String(groupId)).set({
-      ...groupData,
-      ownerUid: firebaseUser.uid,
-      updatedAt: new Date(),
-    }, { merge: true });
-  }
-
-  async function createAiShiftGroupFromResults(results) {
-    const groupName = aiShiftGroupName.trim();
-    if (!groupName) throw new Error("請先輸入 AI 辨識群組名稱，例如「2026年8月排班」。");
-    if (aiShiftGroups.some((group) => String(group?.name || "").trim() === groupName)) {
-      throw new Error(`群組「${groupName}」已存在，請換一個名稱。`);
-    }
-
-    const groupId = makeAiGroupId();
-    const groupData = {
-      name: groupName,
-      year: String(results.year || year),
-      month: String(results.month || month + 1),
-      employees: Array.isArray(results.employees) ? results.employees : [],
-      warnings: Array.isArray(results.warnings) ? results.warnings : [],
-      recognitionMode: results.recognitionMode || "指定員工兩階段辨識",
-      sourceFileName: aiShiftFile?.name || "",
-      createdAt: new Date(),
-      publishedEmployeeIds: [],
-      ownerUid: firebaseUser?.uid || "",
-    };
-    await saveAiShiftGroup(groupId, groupData);
-    const saved = { id: groupId, ...groupData };
-    setAiShiftGroups((current) => [saved, ...current]);
-    setAiShiftGroupId(groupId);
-    setAiShiftResults({ ...results, groupId, groupName, publishedEmployeeIds: [] });
-  }
-
-  async function deleteAiShiftGroup(group) {
-    if (!group?.id || !firebaseUser?.uid) return;
-    if (!window.confirm(`確定要刪除「${String(group.name || "這個群組")}」嗎？\n群組內的 AI 辨識結果也會一起刪除。`)) return;
-
-    setAiGroupBusy(true);
-    try {
-      const { db } = getFirebaseServices();
-      const groupRef = db.collection("aiShiftGroups").doc(String(group.id));
-      const groupSnapshot = await groupRef.get();
-      if (groupSnapshot.exists) {
-        const groupData = groupSnapshot.data() || {};
-        if (groupData.ownerUid !== firebaseUser.uid) {
-          throw new Error("沒有權限刪除此 AI 群組。");
-        }
-        await groupRef.delete();
-      }
-      setAiShiftGroups((current) => current.filter((item) => item.id !== group.id));
-      if (aiShiftGroupId === group.id) {
-        setAiShiftGroupId("");
-        setAiShiftResults(null);
-        setAiPublishEmployeeId("");
-        setAiPublishMessage("");
-      }
-    } catch (error) {
-      setAiShiftError(error?.message || "刪除群組失敗。");
-    } finally {
-      setAiGroupBusy(false);
-    }
   }
 
   async function savePerson() {
@@ -2142,12 +1764,41 @@ export default function App() {
     }
   }
 
+  async function restoreHoliday(id) {
+    const systemHoliday = getSystemHolidayDefinitions(year).find((item) => item.id === id);
+    if (!systemHoliday) return;
+
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("holidayOverrides").doc(id).set({
+        year,
+        date: systemHoliday.date,
+        name: systemHoliday.name,
+        enabled: true,
+        updatedAt: new Date(),
+      }, { merge: true });
+      setHolidayOverrides((old) => ({
+        ...old,
+        [id]: {
+          ...(old[id] || {}),
+          year,
+          date: systemHoliday.date,
+          name: systemHoliday.name,
+          enabled: true,
+        },
+      }));
+      setAdminMessage("國定假日已恢復");
+    } catch (error) {
+      setAdminMessage(error?.message || "恢復失敗");
+    }
+  }
+
   async function openAdmin() {
     setShowAdminPanel(true);
     setAdminMessage("");
     if (isAdmin) {
       await loadAdminPeople();
-      await loadAiShiftGroups();
+      await loadMonthDataInfo();
     }
   }
 
@@ -2199,14 +1850,14 @@ export default function App() {
           <span className="leave-text">休</span>
         ) : (
           customText && (
-            customText.includes("/") ? (
+            (customText.includes("/") || customText.includes("\n")) ? (
               <span className="custom-text custom-text-multi">
-                {customText.split("/").map((text, index) => (
-                  <span key={`${text}-${index}`}>{text}</span>
+                {customText.split(/[\/\n]+/).map((text, index) => (
+                  <span key={`${text}-${index}`}>{text === "半" ? "半天" : text}</span>
                 ))}
               </span>
             ) : (
-              <span className="custom-text">{customText}</span>
+              <span className="custom-text">{customText === "半" ? "半天" : customText}</span>
             )
           )
         )}
@@ -2338,6 +1989,15 @@ export default function App() {
             </button>
           </div>
 
+          <div className="calendar-import-actions">
+            <button className="calendar-import-button leave-import-button" type="button" onClick={openLoadLeave}>
+              載入休假
+            </button>
+            <button className="calendar-import-button photo-view-button" type="button" onClick={openMonthPhotos}>
+              出勤表照片
+            </button>
+          </div>
+
           <div className="date-selectors">
             <label className="date-select year-select-wrap">
               <span className="date-select-icon" aria-hidden="true">▦</span>
@@ -2438,13 +2098,148 @@ export default function App() {
             <div className="calendar-stat-hours">{monthStatistics.hours}小時</div>
           </div>
 
-          {aiLeaveNotice && (
-            <div className="ai-leave-notice">{aiLeaveNotice}</div>
-          )}
-
         </section>
       </main>
 
+
+
+      {showLoadLeave && (
+        <div className="modal-backdrop" onClick={closeLoadLeave}>
+          <div className="login-modal month-load-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="login-modal-header">
+              <div>
+                <h2>{shiftUser?.name ? `${shiftUser.name} ` : ""}{year}年{month + 1}月份休假</h2>
+                <p>從本月份的出勤資料讀取你的休假</p>
+              </div>
+              <button className="shift-menu-close" type="button" onClick={closeLoadLeave}>×</button>
+            </div>
+
+            {loadLeaveBusy && <div className="month-load-status">讀取中…</div>}
+            {!loadLeaveBusy && loadLeaveError && (
+              <div className="month-load-error">{loadLeaveError}</div>
+            )}
+            {!loadLeaveBusy && !loadLeaveError && (
+              <>
+                {(() => {
+                  const leaveItems = loadLeaveItems.filter((item) => (item.texts || []).some((text) => text === "休"));
+                  const specialItems = loadLeaveItems.filter((item) => (item.texts || []).some((text) => text !== "休"));
+                  const renderItems = (items, kind) => items.length ? items.map((item) => (
+                    <div className={`month-load-item ${kind === "leave" ? "month-load-item-leave" : "month-load-item-special"}`} key={`${kind}-${item.day}`}>
+                      <span className="month-load-day">{item.day}號</span>
+                      <span className="month-load-item-text">
+                        {(item.texts || []).filter((text) => kind === "leave" ? text === "休" : text !== "休").map((text, index) => (
+                          <span
+                            key={`${item.day}-${text}-${index}`}
+                            className={text === "休" ? "month-load-tag leave" : "month-load-tag special"}
+                          >
+                            {text === "半" ? "半天" : text}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  )) : <span className="month-load-empty">沒有資料</span>;
+
+                  return (
+                    <div className="month-load-sections">
+                      <section className="month-load-section month-load-section-leave">
+                        <h3>休假</h3>
+                        <div className="month-load-days">{renderItems(leaveItems, "leave")}</div>
+                      </section>
+                      <section className="month-load-section month-load-section-special">
+                        <h3>其他</h3>
+                        <div className="month-load-days">{renderItems(specialItems, "special")}</div>
+                      </section>
+                    </div>
+                  );
+                })()}
+                <div className="modal-buttons">
+                  <button className="cancel-button" type="button" onClick={closeLoadLeave}>取消</button>
+                  <button className="save-button" type="button" onClick={requestLoadLeaveConfirm} disabled={!loadLeaveItems.length}>載入</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showLoadLeaveConfirm && (
+        <div className="modal-backdrop" onClick={() => !loadLeaveBusy && setShowLoadLeaveConfirm(false)}>
+          <div className="login-modal confirm-load-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="login-modal-header">
+              <div>
+                <h2>確認載入</h2>
+                <p>確定要載入 {year}年{month + 1}月的休假嗎？</p>
+              </div>
+            </div>
+            <div className="modal-buttons">
+              <button className="cancel-button" type="button" onClick={() => setShowLoadLeaveConfirm(false)} disabled={loadLeaveBusy}>取消</button>
+              <button className="save-button" type="button" onClick={confirmLoadLeave} disabled={loadLeaveBusy}>
+                {loadLeaveBusy ? "載入中…" : "確定載入"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMonthPhotos && (
+        <div className="modal-backdrop" onClick={() => !selectedPhoto && setShowMonthPhotos(false)}>
+          <div className="login-modal month-photos-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="login-modal-header">
+              <div>
+                <h2>{year}年{month + 1}月出勤表照片</h2>
+                <p>管理者上傳的本月份照片</p>
+              </div>
+              <button className="shift-menu-close" type="button" onClick={() => setShowMonthPhotos(false)}>×</button>
+            </div>
+
+            {monthPhotosBusy ? (
+              <div className="month-load-status">讀取中…</div>
+            ) : monthPhotos.length ? (
+              <div className="month-photo-viewer-grid">
+                {monthPhotos.map((photo) => (
+                  <button type="button" className="month-photo-view-item" key={photo.id} onClick={() => setSelectedPhoto(photo)}>
+                    <img src={photo.dataUrl || photo.url} alt={photo.name || "出勤表照片"} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="month-load-empty">本月尚未上傳出勤表照片</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedPhoto && (
+        <div className="modal-backdrop photo-lightbox-backdrop" onClick={() => setSelectedPhoto(null)}>
+          <div className="photo-lightbox" onClick={(event) => event.stopPropagation()}>
+            <div className="photo-lightbox-toolbar" aria-label="照片縮放工具">
+              <button type="button" onClick={() => changePhotoScale(-0.25)} aria-label="縮小">−</button>
+              <span>{Math.round(photoScale * 100)}%</span>
+              <button type="button" onClick={() => changePhotoScale(0.25)} aria-label="放大">＋</button>
+              <button type="button" className="photo-lightbox-reset" onClick={resetPhotoView}>重設</button>
+              <button type="button" className="photo-lightbox-close" onClick={() => setSelectedPhoto(null)} aria-label="關閉">×</button>
+            </div>
+            <div
+              className={`photo-lightbox-canvas ${photoDragging ? "dragging" : ""}`}
+              onWheel={handlePhotoWheel}
+              onPointerDown={handlePhotoPointerDown}
+              onPointerMove={handlePhotoPointerMove}
+              onPointerUp={handlePhotoPointerUp}
+              onPointerCancel={handlePhotoPointerUp}
+              onDoubleClick={() => changePhotoScale(photoScale > 1 ? -0.5 : 0.5)}
+            >
+              <img
+                src={selectedPhoto.dataUrl || selectedPhoto.url}
+                alt={selectedPhoto.name || "出勤表照片"}
+                style={{
+                  transform: `translate(${photoOffset.x}px, ${photoOffset.y}px) scale(${photoScale})`,
+                }}
+                draggable="false"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAdminPanel && isAdmin && (
         <div className="modal-backdrop admin-backdrop" onClick={() => setShowAdminPanel(false)}>
@@ -2462,7 +2257,7 @@ export default function App() {
                 ["people", "人員管理"],
                 ["global", "全員行程"],
                 ["holiday", "國定假日"],
-                ["aiShift", "AI排班"],
+                ["monthData", "月份資料"],
               ].map(([key, label]) => (
                 <button key={key} type="button" className={adminTab === key ? "active" : ""} onClick={() => setAdminTab(key)}>
                   {label}
@@ -2533,52 +2328,171 @@ export default function App() {
             )}
 
 
-            {adminTab === "aiShift" && (
-              <div className="admin-section ai-shift-section">
-                <h3>AI 排班圖片辨識</h3>
-                <p className="ai-shift-help">
-                  先建立辨識群組，再勾選要辨識的員工。辨識結果會保存到群組，之後可以直接發布，不需要重新辨識。
+            {adminTab === "holiday" && (
+              <div className="admin-section holiday-admin-section">
+                <h3>{year}年國定假日</h3>
+                <p className="month-data-help">
+                  系統會自動帶入國定假日；管理者可以修改日期／名稱，或暫時停用。
                 </p>
 
-                <div className="ai-shift-group-panel">
-                  <div className="ai-shift-group-header">
-                    <strong>AI 辨識群組</strong>
-                    <span>{aiShiftGroups.length} 個</span>
+                <div className="holiday-admin-list">
+                  {getSystemHolidayDefinitions(year).map((item) => {
+                    const override = holidayOverrides[item.id];
+                    const enabled = override?.enabled !== false;
+                    const date = override?.date || item.date;
+                    const name = override?.name || item.name;
+
+                    return (
+                      <div className={`holiday-admin-row ${enabled ? "" : "disabled"}`} key={item.id}>
+                        <div className="holiday-admin-info">
+                          <strong>{date}</strong>
+                          <span>{name}</span>
+                        </div>
+                        <div className="admin-row-actions">
+                          <button
+                            type="button"
+                            className="holiday-edit-button"
+                            onClick={() => setHolidayForm({
+                              id: item.id,
+                              date,
+                              name,
+                            })}
+                          >
+                            編輯
+                          </button>
+                          {enabled ? (
+                            <button
+                              type="button"
+                              className="holiday-disable-button"
+                              onClick={() => disableHoliday(item.id)}
+                            >
+                              停用
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="holiday-restore-button"
+                              onClick={() => restoreHoliday(item.id)}
+                            >
+                              恢復
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {holidayForm.id && (
+                  <div className="holiday-edit-box">
+                    <div className="holiday-edit-title">
+                      <strong>修改國定假日</strong>
+                      <button
+                        type="button"
+                        className="shift-menu-close"
+                        onClick={() => setHolidayForm({ id: "", date: "", name: "" })}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="admin-form-grid">
+                      <input
+                        type="date"
+                        value={holidayForm.date}
+                        onChange={(event) => setHolidayForm({ ...holidayForm, date: event.target.value })}
+                      />
+                      <input
+                        value={holidayForm.name}
+                        placeholder="國定假日名稱"
+                        onChange={(event) => setHolidayForm({ ...holidayForm, name: event.target.value })}
+                      />
+                    </div>
+                    <div className="modal-buttons">
+                      <button
+                        type="button"
+                        className="cancel-button"
+                        onClick={() => setHolidayForm({ id: "", date: "", name: "" })}
+                      >
+                        取消
+                      </button>
+                      <button type="button" className="save-button" onClick={saveHolidayOverride}>
+                        儲存
+                      </button>
+                    </div>
                   </div>
-                  <div className="ai-shift-group-create">
-                    <input
-                      value={aiShiftGroupName}
-                      placeholder={`例如：${year}年${month + 1}月排班`}
-                      onChange={(event) => setAiShiftGroupName(event.target.value)}
-                      disabled={aiGroupBusy || aiShiftBusy}
-                    />
-                    <span className="ai-shift-group-month">{year} 年 {month + 1} 月</span>
+                )}
+              </div>
+            )}
+
+            {adminTab === "monthData" && (
+              <div className="admin-section month-data-section">
+                <h3>月份資料</h3>
+                <p className="month-data-help">
+                  休假 Excel 與出勤表照片都依目前選擇的年月分開管理，不使用檔名判斷月份。
+                </p>
+
+                <div className="month-data-card">
+                  <div className="month-data-card-header">
+                    <div>
+                      <strong>{year}年{month + 1}月休假資料</strong>
+                      <span>{monthDataInfo?.sourceFileName || "尚未上傳休假資料"}</span>
+                    </div>
+                    {monthDataInfo?.sourceFileName && (
+                      <button type="button" className="danger-button" disabled={monthDataBusy} onClick={removeAttendanceExcel}>
+                        移除 Excel
+                      </button>
+                    )}
                   </div>
 
-                  {aiShiftGroups.length > 0 && (
-                    <div className="ai-shift-group-list">
-                      {aiShiftGroups.map((group) => (
-                        <div className={`ai-shift-group-row ${aiShiftGroupId === group.id ? "active" : ""}`} key={group.id}>
-                          <button
-                            type="button"
-                            className="ai-shift-group-select"
-                            onClick={() => selectAiShiftGroup(group)}
-                            disabled={aiGroupBusy || aiShiftBusy}
-                          >
-                            <strong>{group.name || "未命名群組"}</strong>
-                            <span>
-                              {group.year && group.month ? `${group.year}/${group.month}` : ""}
-                              {" · "}
-                              {Array.isArray(group.employees) ? group.employees.length : 0} 位
-                            </span>
+                  <input
+                    id="attendance-excel-input"
+                    className="month-data-file-input"
+                    type="file"
+                    accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    onChange={handleAttendanceExcelUpload}
+                    disabled={monthDataBusy}
+                  />
+                  <label className="month-data-upload-button" htmlFor="attendance-excel-input">
+                    {monthDataBusy ? "處理中…" : "上傳休假 Excel"}
+                  </label>
+
+                  {monthDataInfo?.uploadedAt && (
+                    <small className="month-data-meta">
+                      已上傳：{formatMonthDataTime(monthDataInfo.uploadedAt)} · {monthDataInfo.employeeCount || 0} 位員工
+                    </small>
+                  )}
+                </div>
+
+                <div className="month-data-card">
+                  <div className="month-data-card-header">
+                    <div>
+                      <strong>{year}年{month + 1}月出勤表照片</strong>
+                      <span>{monthPhotos.length ? `${monthPhotos.length} 張` : "尚未上傳照片"}</span>
+                    </div>
+                  </div>
+
+                  <input
+                    id="month-photo-input"
+                    className="month-data-file-input"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleMonthPhotoUpload}
+                    disabled={monthPhotoAdminBusy}
+                  />
+                  <label className="month-data-upload-button photo-upload-button" htmlFor="month-photo-input">
+                    {monthPhotoAdminBusy ? "上傳中…" : "新增出勤表照片"}
+                  </label>
+
+                  {monthPhotos.length > 0 && (
+                    <div className="admin-photo-grid">
+                      {monthPhotos.map((photo) => (
+                        <div className="admin-photo-item" key={photo.id}>
+                          <button type="button" onClick={() => setSelectedPhoto(photo)} className="admin-photo-preview">
+                            <img src={photo.dataUrl || photo.url} alt={photo.name || "出勤表照片"} />
                           </button>
-                          <button
-                            type="button"
-                            className="ai-shift-group-delete"
-                            onClick={() => deleteAiShiftGroup(group)}
-                            disabled={aiGroupBusy || aiShiftBusy}
-                          >
-                            刪除
+                          <button type="button" className="danger-button admin-photo-delete" disabled={monthPhotoAdminBusy} onClick={() => removeMonthPhoto(photo)}>
+                            移除
                           </button>
                         </div>
                       ))}
@@ -2586,227 +2500,10 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="ai-shift-employee-picker">
-                  <div className="ai-shift-picker-header">
-                    <strong>選擇要辨識的員工</strong>
-                    <button type="button" onClick={toggleAllAiEmployees} disabled={aiShiftBusy || !adminPeople.length}>
-                      {aiSelectedEmployeeIds.length === adminPeople.length ? "取消全選" : "全選"}
-                    </button>
-                  </div>
-                  <div className="ai-shift-employee-grid">
-                    {adminPeople.map((person) => {
-                      const id = String(person?.employeeId || "").trim().toUpperCase();
-                      const checked = aiSelectedEmployeeIds.includes(id);
-                      return (
-                        <label className={`ai-shift-employee-check ${checked ? "checked" : ""}`} key={id}>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAiSelectedEmployee(id)}
-                            disabled={aiShiftBusy}
-                          />
-                          <span>{id}</span>
-                          <small>{person?.name || ""}</small>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  {!adminPeople.length && <div className="ai-shift-empty">尚未讀取使用者名單。</div>}
-                </div>
-
-                <div className="ai-shift-upload-box">
-                  <input
-                    id="ai-shift-image-input"
-                    className="ai-shift-file-input"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAiShiftFile}
-                  />
-                  <label className="ai-shift-upload-button" htmlFor="ai-shift-image-input">
-                    {aiShiftFile ? "重新選擇排班圖片" : "選擇排班圖片"}
-                  </label>
-                  {aiShiftFile && (
-                    <span className="ai-shift-file-name">{aiShiftFile.name}</span>
-                  )}
-                </div>
-
-                {aiShiftPreview && (
-                  <div className="ai-shift-preview">
-                    <img src={aiShiftPreview} alt="排班表預覽" />
-                  </div>
-                )}
-
-                {aiShiftError && <div className="ai-shift-error">{aiShiftError}</div>}
-
-                <div className="modal-buttons ai-shift-actions">
-                  <button
-                    className="cancel-button"
-                    type="button"
-                    onClick={resetAiShiftImport}
-                    disabled={aiShiftBusy}
-                  >
-                    清除
-                  </button>
-                  <button
-                    className="save-button"
-                    type="button"
-                    onClick={runAiShiftRecognition}
-                    disabled={aiShiftBusy || !aiShiftPreview || !aiSelectedEmployeeIds.length || !aiShiftGroupName.trim()}
-                  >
-                    {aiShiftBusy ? "Gemini 辨識中…" : "開始 AI 辨識並保存"}
-                  </button>
-                </div>
-
-                {aiShiftResults && (
-                  <div className="ai-shift-results">
-                    <div className="ai-shift-result-header">
-                      <div>
-                        <h3>辨識結果</h3>
-                        <p>
-                          {aiShiftResults.year && aiShiftResults.month
-                            ? `${aiShiftResults.year} 年 ${aiShiftResults.month} 月`
-                            : "月份由圖片辨識"}
-                        </p>
-                      </div>
-                      <span>
-                        {aiShiftResults.groupName ? `${aiShiftResults.groupName} · ` : ""}
-                        {Array.isArray(aiShiftResults.employees)
-                          ? `${aiShiftResults.employees.length} 位`
-                          : "—"}
-                      </span>
-                    </div>
-
-                    <div className="ai-shift-publish-test">
-                      <div className="ai-shift-publish-title">發布</div>
-                      <div className="ai-shift-publish-row">
-                        <select
-                          value={aiPublishEmployeeId}
-                          onChange={(event) => {
-                            setAiPublishEmployeeId(event.target.value);
-                            setAiPublishMessage("");
-                          }}
-                          disabled={aiPublishBusy}
-                        >
-                          <option value="">選擇要發布的員工</option>
-                          {aiShiftResults.employees.map((employee) => (
-                            <option key={employee.employeeId} value={employee.employeeId}>
-                              {employee.employeeId} {employee.name || ""}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="ai-shift-publish-button"
-                          onClick={publishAiShiftEmployee}
-                          disabled={aiPublishBusy || !aiPublishEmployeeId}
-                        >
-                          {aiPublishBusy ? "發布中…" : "發布指定"}
-                        </button>
-                        <button
-                          type="button"
-                          className="ai-shift-publish-button ai-shift-publish-all-button"
-                          onClick={publishAiShiftAll}
-                          disabled={aiPublishBusy || !aiShiftResults.employees.length}
-                        >
-                          {aiPublishBusy ? "發布中…" : "發布全部"}
-                        </button>
-                      </div>
-                      {aiPublishMessage && (
-                        <div className={`ai-shift-publish-message ${aiPublishMessage.includes("成功") ? "success" : "error"}`}>
-                          {aiPublishMessage}
-                        </div>
-                      )}
-                    </div>
-
-                    {Array.isArray(aiShiftResults.employees) && aiShiftResults.employees.length > 0 ? (
-                      <div className="ai-shift-result-list">
-                        {aiShiftResults.employees.map((employee, index) => (
-                          <div
-                            className="ai-shift-result-card"
-                            key={`${employee.employeeId || "unknown"}-${index}`}
-                          >
-                            <div className="ai-shift-person">
-                              <strong>{employee.employeeId || "未辨識工號"}</strong>
-                              <span>{employee.name || "未配對姓名"}</span>
-                              {employee.matched === false && <em>系統找不到此工號</em>}
-                              {Array.isArray(aiShiftResults.publishedEmployeeIds) &&
-                                aiShiftResults.publishedEmployeeIds.includes(employee.employeeId) && (
-                                  <em className="published">已發布</em>
-                                )}
-                            </div>
-
-                            <div className="ai-shift-day-results">
-                              {Array.isArray(employee.days) && employee.days.length > 0 ? (
-                                employee.days.map((day, dayIndex) => (
-                                  <div
-                                    className={`ai-shift-day-result ${day.type === "半天" || day.type === "特殊" ? "half" : "off"}`}
-                                    key={`${day.date || "unknown"}-${dayIndex}`}
-                                  >
-                                    <strong>{day.date || "日期不明"}</strong>
-                                    <span>{day.type || "休"}</span>
-                                    {day.marker && <small>{day.marker}</small>}
-                                  </div>
-                                ))
-                              ) : (
-                                <span className="ai-shift-empty">沒有抓到指定標記</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="ai-shift-empty">這張圖片沒有辨識到符合目前規則的資料。</div>
-                    )}
-
-                    {Array.isArray(aiShiftResults.warnings) && aiShiftResults.warnings.length > 0 && (
-                      <div className="ai-shift-warnings">
-                        <strong>需要注意</strong>
-                        <ul>
-                          {aiShiftResults.warnings.map((warning, index) => (
-                            <li key={index}>{warning}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    <div className="ai-shift-safe-note">
-                      AI 辨識結果不會自動寫入。請先確認辨識結果，確認無誤後可直接「發布指定」或「發布全部」。按下發布後會立即寫入行事曆。
-                    </div>
-                  </div>
-                )}
+                {monthDataMessage && <div className="admin-message">{monthDataMessage}</div>}
               </div>
             )}
 
-            {adminTab === "holiday" && (
-              <div className="admin-section">
-                <h3>{year} 年國定假日</h3>
-                <div className="admin-list">
-                  {getSystemHolidayDefinitions(year).map((item) => {
-                    const override = holidayOverrides[item.id];
-                    const effective = currentHolidayMap[item.date] || Object.values(currentHolidayMap).find((x) => x.id === item.id);
-                    const effectiveDate = override?.date || item.date;
-                    const effectiveName = override?.name || item.name;
-                    const disabled = override?.enabled === false;
-                    return (
-                      <div className="admin-list-row" key={item.id}>
-                        <div><strong>{effectiveDate}</strong><span>{effectiveName}{disabled ? "（已停用）" : ""}</span></div>
-                        <div className="admin-row-actions">
-                          <button type="button" onClick={() => { setHolidayForm({ id: item.id, date: effectiveDate, name: effectiveName }); setAdminMessage(""); }}>編輯</button>
-                          <button type="button" className="delete-button" onClick={() => disableHoliday(item.id)}>停用</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {holidayForm.id && (
-                  <div className="admin-edit-box">
-                    <input type="date" value={holidayForm.date} onChange={(e) => setHolidayForm({ ...holidayForm, date: e.target.value })} />
-                    <input value={holidayForm.name} onChange={(e) => setHolidayForm({ ...holidayForm, name: e.target.value })} placeholder="名稱" />
-                    <button className="save-button" type="button" onClick={saveHolidayOverride}>儲存國定假日</button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}

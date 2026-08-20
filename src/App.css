@@ -62,8 +62,8 @@ input {
 }
 
 .calendar-top-actions {
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   width: 100%;
   margin-bottom: 10px;
@@ -71,9 +71,10 @@ input {
 
 .calendar-top-actions .leave-month-button,
 .calendar-top-actions .today-button {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   min-height: 42px;
+  box-sizing: border-box;
 }
 
 .login-button {
@@ -441,7 +442,7 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #102a56;
+  color: #222;
   font-size: 18px;
   font-weight: 700;
 }
@@ -457,7 +458,7 @@ input {
   position: absolute;
   right: 7px;
   bottom: 5px;
-  max-width: 68%;
+  max-width: 78%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1476,7 +1477,7 @@ input {
 }
 .admin-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 7px;
   margin: 18px 0;
   padding: 4px;
@@ -2470,5 +2471,544 @@ input {
   .custom-text-multi {
     font-size: 10px !important;
     line-height: 1.0 !important;
+  }
+}
+
+
+/* =========================
+   Excel / Month data / Photos
+   ========================= */
+.calendar-import-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.calendar-import-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.leave-import-button {
+  background: #e9f8ef;
+  color: #168247;
+}
+
+.leave-import-button:hover {
+  background: #d9f1e2;
+}
+
+.photo-view-button {
+  background: #f1eaff;
+  color: #6b46c1;
+}
+
+.photo-view-button:hover {
+  background: #e5d9ff;
+}
+
+.month-load-modal,
+.confirm-load-modal,
+.month-photos-modal {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.month-load-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 10px;
+}
+
+.month-load-section {
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+}
+
+.month-load-section-leave {
+  background: #fff8f9;
+  border: 1px solid #f3d5da;
+}
+
+.month-load-section-special {
+  background: #fffdf5;
+  border: 1px solid #f0dfad;
+}
+
+.month-load-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.month-load-section-leave h3 { color: #e43131; }
+.month-load-section-special h3 { color: #c38a00; }
+
+.month-load-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 4px 0 0;
+}
+
+.month-load-days > .month-load-empty {
+  width: 100%;
+}
+
+.month-load-item {
+  min-width: 108px;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.month-load-item-leave {
+  background: #fff1f3;
+  border: 1px solid #f3d5da;
+}
+
+.month-load-item-special {
+  background: #fff8df;
+  border: 1px solid #f0dfad;
+}
+
+.month-load-day {
+  display: inline-block;
+  color: #111827;
+  font-size: 15px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.month-load-item-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 0;
+  line-height: 1.15;
+  font-weight: 800;
+}
+
+.month-load-tag {
+  display: inline-block;
+}
+
+.month-load-tag.leave {
+  color: #e43131;
+}
+
+.month-load-tag.special {
+  color: #c38a00;
+}
+
+.month-load-tag.special + .month-load-tag.special::before {
+  content: "/";
+  margin-right: 5px;
+  color: #c38a00;
+}
+
+.custom-text-multi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.05;
+  white-space: normal;
+}
+
+.custom-text-multi span {
+  display: block;
+}
+
+.month-load-empty,
+.month-load-status {
+  padding: 24px 8px;
+  text-align: center;
+  color: #68768b;
+  font-weight: 700;
+}
+
+.month-load-error {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: #fff1f3;
+  color: #c62828;
+  font-weight: 800;
+  text-align: center;
+}
+
+.month-photo-viewer-grid,
+.admin-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.month-photo-view-item,
+.admin-photo-preview {
+  border: 1px solid #dce3ec;
+  border-radius: 10px;
+  padding: 0;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  aspect-ratio: 1 / 1;
+}
+
+.month-photo-view-item img,
+.admin-photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-lightbox-backdrop {
+  z-index: 1000;
+}
+
+.photo-lightbox {
+  position: relative;
+  width: min(1100px, calc(100vw - 24px));
+  height: min(820px, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.photo-lightbox-toolbar {
+  position: relative;
+  z-index: 5;
+  min-height: 48px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid #e3e8ef;
+}
+
+.photo-lightbox-toolbar button {
+  min-width: 36px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d5deea;
+  border-radius: 9px;
+  background: #fff;
+  color: #102a56;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.photo-lightbox-toolbar button:hover {
+  background: #f3f7fc;
+}
+
+.photo-lightbox-toolbar span {
+  min-width: 58px;
+  text-align: center;
+  color: #52627a;
+  font-weight: 800;
+}
+
+.photo-lightbox-toolbar .photo-lightbox-reset {
+  margin-left: 3px;
+  color: #287be8;
+}
+
+.photo-lightbox-toolbar .photo-lightbox-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #edf2f7;
+  color: #102a56;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.photo-lightbox-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #101828;
+  cursor: grab;
+  touch-action: none;
+}
+
+.photo-lightbox-canvas.dragging {
+  cursor: grabbing;
+}
+
+.photo-lightbox-canvas img {
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+
+
+
+.holiday-admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.holiday-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.holiday-admin-row {
+  min-height: 56px;
+  border: 1px solid #e0e6ee;
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff;
+}
+
+.holiday-admin-row.disabled {
+  opacity: 0.55;
+  background: #f7f8fa;
+}
+
+.holiday-admin-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.holiday-admin-info strong {
+  min-width: 92px;
+  color: #102a56;
+}
+
+.holiday-admin-info span {
+  color: #52627a;
+  font-weight: 700;
+}
+
+.holiday-edit-box {
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid #dce4ef;
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.holiday-edit-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.holiday-edit-title .shift-menu-close {
+  width: 30px;
+  height: 30px;
+  font-size: 21px;
+}
+
+.holiday-edit-button,
+.holiday-disable-button,
+.holiday-restore-button {
+  min-width: 58px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #fff;
+}
+
+.holiday-edit-button {
+  border: 1px solid #b9d2f6;
+  color: #287be8;
+}
+
+.holiday-edit-button:hover {
+  background: #edf6ff;
+}
+
+.holiday-disable-button {
+  border: 1px solid #f2b7bf;
+  color: #d93131;
+}
+
+.holiday-disable-button:hover {
+  background: #fff1f3;
+}
+
+.holiday-restore-button {
+  border: 1px solid #b9dfc5;
+  color: #168247;
+  background: #f0fbf3;
+}
+
+.holiday-restore-button:hover {
+  background: #e2f6e8;
+}
+
+.month-data-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.month-data-help {
+  margin: -6px 0 2px;
+  color: #68768b;
+  line-height: 1.55;
+}
+
+.month-data-card {
+  border: 1px solid #e0e6ef;
+  border-radius: 12px;
+  padding: 14px;
+  background: #fbfcfe;
+}
+
+.month-data-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.month-data-card-header > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.month-data-card-header strong {
+  color: #102a56;
+  font-size: 17px;
+}
+
+.month-data-card-header span {
+  color: #738096;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-data-file-input {
+  display: none;
+}
+
+.month-data-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: #edf6ff;
+  color: #287be8;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.photo-upload-button {
+  background: #f4efff;
+  color: #7051c9;
+}
+
+.month-data-meta {
+  display: block;
+  margin-top: 8px;
+  color: #718097;
+}
+
+.admin-photo-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.admin-photo-item {
+  min-width: 0;
+}
+
+.admin-photo-delete {
+  width: 100%;
+  margin-top: 5px;
+  min-height: 32px;
+}
+
+@media (max-width: 640px) {
+ .calendar-import-actions {
+    gap: 8px;
+  }
+
+  .calendar-import-button {
+    min-height: 40px;
+    font-size: 15px;
+  }
+
+  .month-photo-viewer-grid,
+  .admin-photo-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .holiday-admin-info {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .holiday-admin-info strong {
+    min-width: 0;
+  }
+
+  .month-data-card-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

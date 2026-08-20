@@ -33,9 +33,23 @@ If you are developing a production application, we recommend using TypeScript wi
 注意：不要把 Firebase Admin SDK 私密金鑰放進前端。
 
 
-## AI 排班 API 金鑰輪替
-後端會依序讀取 `GEMINI_API_KEY`、`GEMINI_API_KEY_2`、`GEMINI_API_KEY_3` ...，目前最多支援 20 組。
-遇到 quota / rate limit 時會自動換下一組。
+## 休假與出勤表照片
+- 管理者在「管理者 → 月份資料」上傳目前月份 Excel；系統會解析並儲存在 `attendanceMonths/{YYYY-MM}`，不依賴檔名判斷月份。
+- 一般員工可從「載入休假」讀取自己的當月休假，確認後才寫入自己的行事曆。
+- 管理者可在同一處新增／移除月份照片；一般員工可按「出勤表照片」查看目前月份照片。
 
-## AI 排班標記
-目前辨識：`休`、`半`、`K12`、`工程`。同一格如果同時出現多個指定標記，會全部保留，例如 `半/K12`。
+### 休假 Excel 與出勤表照片
+休假 Excel 會在瀏覽器直接解析，解析後只將「月份＋工號＋休假日期」存入 Firestore。
+出勤表照片會先在瀏覽器壓縮，再以資料內容存入 Firestore，不使用 Firebase Storage，因此不需要升級 Blaze。
+
+
+## Firebase Rules 部署（目前版本）
+
+本版本的 Excel 休假資料與月份照片都使用 Firestore，不使用 Firebase Storage。
+更新程式後，請在專案根目錄執行：
+
+```powershell
+firebase deploy --only firestore:rules
+```
+
+`storage.rules` 不需要部署。
