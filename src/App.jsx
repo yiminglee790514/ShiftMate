@@ -564,16 +564,7 @@ export default function App() {
   const [monthPhotos, setMonthPhotos] = useState([]);
   const [monthPhotosBusy, setMonthPhotosBusy] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
-  const [photoScale, setPhotoScale] = useState(1);
-  const [photoOffset, setPhotoOffset] = useState({ x: 0, y: 0 });
-  const [photoDragging, setPhotoDragging] = useState(false);
-  const [photoDragStart, setPhotoDragStart] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    setPhotoScale(1);
-    setPhotoOffset({ x: 0, y: 0 });
-    setPhotoDragging(false);
-  }, [selectedPhoto]);
+  const [pendingPhotoFiles, setPendingPhotoFiles] = useState([]);
 
   const [monthDataBusy, setMonthDataBusy] = useState(false);
   const [monthDataMessage, setMonthDataMessage] = useState("");
@@ -1170,11 +1161,16 @@ export default function App() {
     setSelectedPhoto(null);
     setShowMonthPhotos(true);
     setMonthPhotosBusy(true);
-    await loadMonthPhotosForMonth(year, month);
+    const photos = await loadMonthPhotosForMonth(year, month);
     setMonthPhotosBusy(false);
+
+    if (photos.length === 1) {
+      setShowMonthPhotos(false);
+      setSelectedPhoto(photos[0]);
+    }
   }
 
-  async function imageFileToFirestoreDataUrl(file) {
+  async function imageFileToFirestoreDataUrl(file, rotation = 0) {
     if (!file?.type?.startsWith("image/")) {
       throw new Error(`「${file?.name || "檔案"}」不是圖片檔案。`);
     }
@@ -1186,7 +1182,6 @@ export default function App() {
       reader.readAsDataURL(file);
     });
 
-    // 先嘗試縮放到適合 Firestore 儲存的大小。
     const sourceUrl = await readAsDataUrl();
     const image = await new Promise((resolve, reject) => {
       const img = new Image();
@@ -1196,18 +1191,27 @@ export default function App() {
     });
 
     const maxDimension = 1800;
-    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+    const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+    const normalizedRotation = ((rotation % 360) + 360) % 360;
+    const quarterTurn = normalizedRotation === 90 || normalizedRotation === 270;
+
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
-    canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    canvas.width = quarterTurn ? drawHeight : drawWidth;
+    canvas.height = quarterTurn ? drawWidth : drawHeight;
 
     const context = canvas.getContext("2d");
     if (!context) throw new Error("瀏覽器不支援圖片處理。");
+
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate((normalizedRotation * Math.PI) / 180);
+    context.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
-    // Firestore 單一文件約 1 MiB 上限；照片本體預留安全空間。
     const qualities = [0.82, 0.74, 0.66, 0.58];
     let dataUrl = "";
 
@@ -1217,11 +1221,11 @@ export default function App() {
     }
 
     if (dataUrl.length > 850000) {
-      // 最後再縮小一次，避免 Firestore 文件超過限制。
       const smaller = document.createElement("canvas");
       const ratio = 1200 / Math.max(canvas.width, canvas.height);
-      smaller.width = Math.max(1, Math.round(canvas.width * Math.min(1, ratio)));
-      smaller.height = Math.max(1, Math.round(canvas.height * Math.min(1, ratio)));
+      const smallerScale = Math.min(1, ratio);
+      smaller.width = Math.max(1, Math.round(canvas.width * smallerScale));
+      smaller.height = Math.max(1, Math.round(canvas.height * smallerScale));
       const smallerContext = smaller.getContext("2d");
       if (!smallerContext) throw new Error("瀏覽器不支援圖片處理。");
       smallerContext.fillStyle = "#ffffff";
@@ -1237,10 +1241,44 @@ export default function App() {
     return dataUrl;
   }
 
-  async function handleMonthPhotoUpload(event) {
-    const files = Array.from(event.target.files || []);
+  function handleMonthPhotoSelection(event) {
+    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith("image/"));
     event.target.value = "";
     if (!files.length || !isAdmin) return;
+
+    pendingPhotoFiles.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+
+    setPendingPhotoFiles(
+      files.map((file) => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+        rotation: 0,
+      }))
+    );
+    setMonthDataMessage("");
+  }
+
+  function rotatePendingPhoto(index) {
+    setPendingPhotoFiles((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...item, rotation: (item.rotation + 90) % 360 }
+          : item
+      )
+    );
+  }
+
+  function clearPendingPhotoFiles() {
+    pendingPhotoFiles.forEach((item) => {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    });
+    setPendingPhotoFiles([]);
+  }
+
+  async function uploadPendingMonthPhotos() {
+    if (!pendingPhotoFiles.length || !isAdmin) return;
 
     setMonthPhotoAdminBusy(true);
     setMonthDataMessage("");
@@ -1250,14 +1288,12 @@ export default function App() {
       const key = getMonthKey(year, month);
       let added = 0;
 
-      for (const file of files) {
-        if (!file.type.startsWith("image/")) continue;
-
-        const dataUrl = await imageFileToFirestoreDataUrl(file);
+      for (const item of pendingPhotoFiles) {
+        const dataUrl = await imageFileToFirestoreDataUrl(item.file, item.rotation);
         const photoId = `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         await db.collection("monthPhotos").doc(key).collection("items").doc(photoId).set({
-          name: file.name,
+          name: item.file.name,
           dataUrl,
           uploadedAt: new Date(),
           ownerUid: firebaseUser?.uid || "",
@@ -1267,6 +1303,7 @@ export default function App() {
       }
 
       await loadMonthPhotosForMonth(year, month);
+      clearPendingPhotoFiles();
       setMonthDataMessage(
         added
           ? `已新增 ${added} 張${year}年${month + 1}月出勤表照片。`
@@ -1443,48 +1480,6 @@ export default function App() {
     }
   }
 
-
-  function changePhotoScale(delta) {
-    setPhotoScale((current) => Math.min(4, Math.max(0.5, Number((current + delta).toFixed(2)))));
-  }
-
-  function resetPhotoView() {
-    setPhotoScale(1);
-    setPhotoOffset({ x: 0, y: 0 });
-  }
-
-  function handlePhotoWheel(event) {
-    event.preventDefault();
-    const delta = event.deltaY < 0 ? 0.15 : -0.15;
-    changePhotoScale(delta);
-  }
-
-  function handlePhotoPointerDown(event) {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    setPhotoDragging(true);
-    setPhotoDragStart({
-      x: event.clientX - photoOffset.x,
-      y: event.clientY - photoOffset.y,
-    });
-  }
-
-  function handlePhotoPointerMove(event) {
-    if (!photoDragging) return;
-    setPhotoOffset({
-      x: event.clientX - photoDragStart.x,
-      y: event.clientY - photoDragStart.y,
-    });
-  }
-
-  function handlePhotoPointerUp(event) {
-    setPhotoDragging(false);
-    try {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    } catch {
-      // ignore
-    }
-  }
 
   const currentEmployeeId = String(
     shiftUser?.employeeId || firebaseUser?.email?.split("@")[0] || ""
@@ -2210,33 +2205,20 @@ export default function App() {
       )}
 
       {selectedPhoto && (
-        <div className="modal-backdrop photo-lightbox-backdrop" onClick={() => setSelectedPhoto(null)}>
-          <div className="photo-lightbox" onClick={(event) => event.stopPropagation()}>
-            <div className="photo-lightbox-toolbar" aria-label="照片縮放工具">
-              <button type="button" onClick={() => changePhotoScale(-0.25)} aria-label="縮小">−</button>
-              <span>{Math.round(photoScale * 100)}%</span>
-              <button type="button" onClick={() => changePhotoScale(0.25)} aria-label="放大">＋</button>
-              <button type="button" className="photo-lightbox-reset" onClick={resetPhotoView}>重設</button>
-              <button type="button" className="photo-lightbox-close" onClick={() => setSelectedPhoto(null)} aria-label="關閉">×</button>
-            </div>
-            <div
-              className={`photo-lightbox-canvas ${photoDragging ? "dragging" : ""}`}
-              onWheel={handlePhotoWheel}
-              onPointerDown={handlePhotoPointerDown}
-              onPointerMove={handlePhotoPointerMove}
-              onPointerUp={handlePhotoPointerUp}
-              onPointerCancel={handlePhotoPointerUp}
-              onDoubleClick={() => changePhotoScale(photoScale > 1 ? -0.5 : 0.5)}
+        <div className="modal-backdrop photo-direct-backdrop" onClick={() => setSelectedPhoto(null)}>
+          <div className="photo-direct-view" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="photo-direct-close"
+              onClick={() => setSelectedPhoto(null)}
+              aria-label="關閉照片"
             >
-              <img
-                src={selectedPhoto.dataUrl || selectedPhoto.url}
-                alt={selectedPhoto.name || "出勤表照片"}
-                style={{
-                  transform: `translate(${photoOffset.x}px, ${photoOffset.y}px) scale(${photoScale})`,
-                }}
-                draggable="false"
-              />
-            </div>
+              ×
+            </button>
+            <img
+              src={selectedPhoto.dataUrl || selectedPhoto.url}
+              alt={selectedPhoto.name || "出勤表照片"}
+            />
           </div>
         </div>
       )}
@@ -2477,12 +2459,47 @@ export default function App() {
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={handleMonthPhotoUpload}
+                    onChange={handleMonthPhotoSelection}
                     disabled={monthPhotoAdminBusy}
                   />
                   <label className="month-data-upload-button photo-upload-button" htmlFor="month-photo-input">
-                    {monthPhotoAdminBusy ? "上傳中…" : "新增出勤表照片"}
+                    選擇出勤表照片
                   </label>
+
+                  {pendingPhotoFiles.length > 0 && (
+                    <div className="pending-photo-upload">
+                      <div className="pending-photo-grid">
+                        {pendingPhotoFiles.map((item, index) => (
+                          <div className="pending-photo-card" key={`${item.file.name}-${index}`}>
+                            <div className="pending-photo-preview">
+                              <img
+                                src={item.previewUrl}
+                                alt={item.file.name}
+                                style={{ transform: `rotate(${item.rotation}deg)` }}
+                              />
+                            </div>
+                            <div className="pending-photo-name">{item.file.name}</div>
+                            <button
+                              type="button"
+                              className="photo-rotate-button"
+                              onClick={() => rotatePendingPhoto(index)}
+                              disabled={monthPhotoAdminBusy}
+                            >
+                              ↻ 旋轉90°
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="pending-photo-actions">
+                        <button type="button" className="cancel-button" onClick={clearPendingPhotoFiles} disabled={monthPhotoAdminBusy}>
+                          取消
+                        </button>
+                        <button type="button" className="save-button" onClick={uploadPendingMonthPhotos} disabled={monthPhotoAdminBusy}>
+                          {monthPhotoAdminBusy ? "上傳中…" : "確認上傳"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {monthPhotos.length > 0 && (
                     <div className="admin-photo-grid">
