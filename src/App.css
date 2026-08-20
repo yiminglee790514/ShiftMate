@@ -3085,15 +3085,73 @@ input {
   width: 100vw;
   height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   overflow: hidden;
+  background: #101828;
 }
 
-.photo-direct-view img {
+.photo-direct-toolbar {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+  min-height: 50px;
+  padding: 6px 54px 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid #e3e8ef;
+}
+
+.photo-direct-toolbar button {
+  min-width: 38px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #d5deea;
+  border-radius: 9px;
+  background: #fff;
+  color: #102a56;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.photo-direct-toolbar button:hover {
+  background: #f3f7fc;
+}
+
+.photo-direct-toolbar span {
+  min-width: 58px;
+  text-align: center;
+  color: #52627a;
+  font-weight: 800;
+}
+
+.photo-direct-toolbar .photo-direct-reset {
+  color: #287be8;
+}
+
+.photo-direct-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-direct-canvas:active {
+  cursor: grabbing;
+}
+
+.photo-direct-canvas img {
   display: block;
-  max-width: 100vw;
-  max-height: 100vh;
+  max-width: 92vw;
+  max-height: calc(100vh - 80px);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -3102,26 +3160,57 @@ input {
   box-shadow: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+  transform-origin: center center;
+  transition: transform 0.12s ease;
 }
 
 .photo-direct-close {
-  position: fixed;
-  z-index: 2;
-  top: max(14px, env(safe-area-inset-top, 0px));
-  right: 14px;
-  width: 42px;
-  height: 42px;
+  position: absolute;
+  z-index: 6;
+  top: 7px;
+  right: 8px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  background: #edf2f7;
   color: #102a56;
-  font-size: 30px;
+  font-size: 26px;
   line-height: 1;
   cursor: pointer;
 }
 
+
+@media (max-width: 640px) {
+  .photo-direct-toolbar {
+    min-height: 48px;
+    padding: 5px 50px 5px 6px;
+    gap: 5px;
+  }
+
+  .photo-direct-toolbar button {
+    min-width: 34px;
+    height: 34px;
+    padding: 0 7px;
+  }
+
+  .photo-direct-toolbar span {
+    min-width: 48px;
+    font-size: 13px;
+  }
+
+  .photo-direct-canvas img {
+    max-width: 96vw;
+    max-height: calc(100vh - 70px);
+  }
+}
+
 /* =========================
-   管理者：照片上傳前旋轉
+   管理者：照片上傳預覽
    ========================= */
 .pending-photo-upload {
   margin-top: 14px;
@@ -3172,16 +3261,6 @@ input {
   font-size: 12px;
 }
 
-.photo-rotate-button {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid #cbd8e8;
-  border-radius: 8px;
-  background: #fff;
-  color: #287be8;
-  font-weight: 800;
-  cursor: pointer;
-}
 
 .pending-photo-actions {
   display: flex;

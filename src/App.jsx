@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { firebaseConfig, FIREBASE_LOGIN_DOMAIN } from "./firebase.js";
 
@@ -564,6 +564,8 @@ export default function App() {
   const [monthPhotos, setMonthPhotos] = useState([]);
   const [monthPhotosBusy, setMonthPhotosBusy] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoViewer, setPhotoViewer] = useState({ rotation: 0, scale: 1, x: 0, y: 0 });
+  const photoDragRef = useRef({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 }); 
   const [pendingPhotoFiles, setPendingPhotoFiles] = useState([]);
 
   const [monthDataBusy, setMonthDataBusy] = useState(false);
@@ -1254,21 +1256,11 @@ export default function App() {
       files.map((file) => ({
         file,
         previewUrl: URL.createObjectURL(file),
-        rotation: 0,
       }))
     );
     setMonthDataMessage("");
   }
 
-  function rotatePendingPhoto(index) {
-    setPendingPhotoFiles((current) =>
-      current.map((item, itemIndex) =>
-        itemIndex === index
-          ? { ...item, rotation: (item.rotation + 90) % 360 }
-          : item
-      )
-    );
-  }
 
   function clearPendingPhotoFiles() {
     pendingPhotoFiles.forEach((item) => {
@@ -1289,7 +1281,7 @@ export default function App() {
       let added = 0;
 
       for (const item of pendingPhotoFiles) {
-        const dataUrl = await imageFileToFirestoreDataUrl(item.file, item.rotation);
+        const dataUrl = await imageFileToFirestoreDataUrl(item.file, 0);
         const photoId = `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
         await db.collection("monthPhotos").doc(key).collection("items").doc(photoId).set({
@@ -1314,6 +1306,74 @@ export default function App() {
       setMonthDataMessage(error?.message || "照片上傳失敗。");
     } finally {
       setMonthPhotoAdminBusy(false);
+    }
+  }
+
+  function resetPhotoViewer() {
+    setPhotoViewer({ rotation: 0, scale: 1, x: 0, y: 0 });
+  }
+
+  function openSelectedPhoto(photo) {
+    setSelectedPhoto(photo);
+    setPhotoViewer({ rotation: 0, scale: 1, x: 0, y: 0 });
+  }
+
+  function closeSelectedPhoto() {
+    setSelectedPhoto(null);
+    resetPhotoViewer();
+    photoDragRef.current = { active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 };
+  }
+
+  function rotateSelectedPhoto(direction = 1) {
+    setPhotoViewer((current) => ({
+      ...current,
+      rotation: (current.rotation + direction * 90 + 360) % 360,
+    }));
+  }
+
+  function zoomSelectedPhoto(delta) {
+    setPhotoViewer((current) => ({
+      ...current,
+      scale: Math.min(4, Math.max(0.5, Number((current.scale + delta).toFixed(2)))),
+    }));
+  }
+
+  function handlePhotoWheel(event) {
+    event.preventDefault();
+    zoomSelectedPhoto(event.deltaY < 0 ? 0.15 : -0.15);
+  }
+
+  function handlePhotoPointerDown(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const current = photoViewer;
+    photoDragRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: current.x,
+      originY: current.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handlePhotoPointerMove(event) {
+    const drag = photoDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+
+    setPhotoViewer((current) => ({
+      ...current,
+      x: drag.originX + (event.clientX - drag.startX),
+      y: drag.originY + (event.clientY - drag.startY),
+    }));
+  }
+
+  function handlePhotoPointerUp(event) {
+    const drag = photoDragRef.current;
+    if (drag.pointerId === event.pointerId) {
+      photoDragRef.current.active = false;
+      photoDragRef.current.pointerId = null;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
     }
   }
 
@@ -2192,7 +2252,7 @@ export default function App() {
             ) : monthPhotos.length ? (
               <div className="month-photo-viewer-grid">
                 {monthPhotos.map((photo) => (
-                  <button type="button" className="month-photo-view-item" key={photo.id} onClick={() => setSelectedPhoto(photo)}>
+                  <button type="button" className="month-photo-view-item" key={photo.id} onClick={() => openSelectedPhoto(photo)}>
                     <img src={photo.dataUrl || photo.url} alt={photo.name || "出勤表照片"} />
                   </button>
                 ))}
@@ -2205,20 +2265,35 @@ export default function App() {
       )}
 
       {selectedPhoto && (
-        <div className="modal-backdrop photo-direct-backdrop" onClick={() => setSelectedPhoto(null)}>
+        <div className="modal-backdrop photo-direct-backdrop" onClick={closeSelectedPhoto}>
           <div className="photo-direct-view" onClick={(event) => event.stopPropagation()}>
-            <button
-              type="button"
-              className="photo-direct-close"
-              onClick={() => setSelectedPhoto(null)}
-              aria-label="關閉照片"
+            <div className="photo-direct-toolbar">
+              <button type="button" onClick={() => rotateSelectedPhoto(-1)} aria-label="向左旋轉">↶</button>
+              <button type="button" onClick={() => zoomSelectedPhoto(-0.25)} aria-label="縮小">−</button>
+              <span>{Math.round(photoViewer.scale * 100)}%</span>
+              <button type="button" onClick={() => zoomSelectedPhoto(0.25)} aria-label="放大">＋</button>
+              <button type="button" onClick={() => rotateSelectedPhoto(1)} aria-label="向右旋轉">↷</button>
+              <button type="button" className="photo-direct-reset" onClick={resetPhotoViewer}>重設</button>
+              <button type="button" className="photo-direct-close" onClick={closeSelectedPhoto} aria-label="關閉照片">×</button>
+            </div>
+            <div
+              className="photo-direct-canvas"
+              onWheel={handlePhotoWheel}
+              onPointerDown={handlePhotoPointerDown}
+              onPointerMove={handlePhotoPointerMove}
+              onPointerUp={handlePhotoPointerUp}
+              onPointerCancel={handlePhotoPointerUp}
+              onDoubleClick={() => zoomSelectedPhoto(0.5)}
             >
-              ×
-            </button>
-            <img
-              src={selectedPhoto.dataUrl || selectedPhoto.url}
-              alt={selectedPhoto.name || "出勤表照片"}
-            />
+              <img
+                src={selectedPhoto.dataUrl || selectedPhoto.url}
+                alt={selectedPhoto.name || "出勤表照片"}
+                draggable="false"
+                style={{
+                  transform: `translate(${photoViewer.x}px, ${photoViewer.y}px) rotate(${photoViewer.rotation}deg) scale(${photoViewer.scale})`,
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -2475,18 +2550,9 @@ export default function App() {
                               <img
                                 src={item.previewUrl}
                                 alt={item.file.name}
-                                style={{ transform: `rotate(${item.rotation}deg)` }}
                               />
                             </div>
                             <div className="pending-photo-name">{item.file.name}</div>
-                            <button
-                              type="button"
-                              className="photo-rotate-button"
-                              onClick={() => rotatePendingPhoto(index)}
-                              disabled={monthPhotoAdminBusy}
-                            >
-                              ↻ 旋轉90°
-                            </button>
                           </div>
                         ))}
                       </div>
@@ -2505,7 +2571,7 @@ export default function App() {
                     <div className="admin-photo-grid">
                       {monthPhotos.map((photo) => (
                         <div className="admin-photo-item" key={photo.id}>
-                          <button type="button" onClick={() => setSelectedPhoto(photo)} className="admin-photo-preview">
+                          <button type="button" onClick={() => openSelectedPhoto(photo)} className="admin-photo-preview">
                             <img src={photo.dataUrl || photo.url} alt={photo.name || "出勤表照片"} />
                           </button>
                           <button type="button" className="danger-button admin-photo-delete" disabled={monthPhotoAdminBusy} onClick={() => removeMonthPhoto(photo)}>
