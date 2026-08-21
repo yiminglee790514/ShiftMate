@@ -398,12 +398,18 @@ function normalizeAttendanceCellText(cell) {
   if (!raw) return [];
 
   // 一格可能同時有多個標記，例如「半/K12」。
-  // 依照使用者規則：半 → 半天，其餘照 Excel 原字保留。
+  // 半 → 半天；相同標記只保留一次，例如「半天/半天」只顯示一個「半天」。
+  const seen = new Set();
   return raw
     .split(/[\/／、,\n]+/)
     .map((item) => item.trim())
     .filter(Boolean)
-    .map((item) => item === "半" ? "半天" : item);
+    .map((item) => item === "半" ? "半天" : item)
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
 }
 
 function parseAttendanceWorkbook(arrayBuffer) {
@@ -1435,7 +1441,7 @@ export default function App() {
         .map(([day, texts]) => ({
           day: Number(day),
           texts: Array.isArray(texts)
-            ? texts.map((text) => text === "半" ? "半天" : String(text)).filter(Boolean)
+            ? Array.from(new Set(texts.map((text) => text === "半" ? "半天" : String(text)).filter(Boolean)))
             : [],
         }))
         .filter((item) =>
@@ -1907,8 +1913,8 @@ export default function App() {
           customText && (
             (customText.includes("/") || customText.includes("\n")) ? (
               <span className="custom-text custom-text-multi">
-                {customText.split(/[\/\n]+/).map((text, index) => (
-                  <span key={`${text}-${index}`}>{text === "半" ? "半天" : text}</span>
+                {Array.from(new Set(customText.split(/[\/\n]+/).map((text) => text === "半" ? "半天" : text).filter(Boolean))).map((text, index) => (
+                  <span key={`${text}-${index}`}>{text}</span>
                 ))}
               </span>
             ) : (
