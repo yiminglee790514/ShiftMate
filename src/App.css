@@ -3015,19 +3015,18 @@ input {
 
 
 /* =========================
-   休假載入：手機 3 欄＋內容區獨立捲動
+   休假載入：整個視窗一起捲動＋手機 3 欄
    ========================= */
 .month-load-modal {
-  max-height: calc(100vh - 28px);
-  overflow: hidden;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c5d6 transparent;
 }
 
 .month-load-sections {
-  max-height: min(58vh, 520px);
-  overflow-y: auto;
-  padding-right: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: #b8c5d6 transparent;
+  max-height: none;
+  overflow: visible;
 }
 
 .month-load-days {
@@ -3041,13 +3040,18 @@ input {
   min-width: 0;
 }
 
+.month-load-updated-at {
+  display: block;
+  margin-top: 7px;
+  color: #7a879a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 @media (max-width: 700px) {
   .month-load-modal {
     width: min(560px, calc(100vw - 16px));
-  }
-
-  .month-load-sections {
-    max-height: 58vh;
+    max-height: calc(100vh - 10px);
   }
 
   .month-load-days {
@@ -3129,6 +3133,22 @@ input {
 
 .photo-direct-toolbar .photo-direct-reset {
   color: #287be8;
+}
+
+.photo-direct-toolbar .photo-direct-save {
+  min-width: 78px;
+  background: #287be8;
+  border-color: #287be8;
+  color: #fff;
+}
+
+.photo-direct-toolbar .photo-direct-save:hover {
+  background: #1f6ed4;
+}
+
+.photo-direct-toolbar .photo-direct-save:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .photo-direct-canvas {
