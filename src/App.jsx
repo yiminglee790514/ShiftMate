@@ -571,7 +571,6 @@ export default function App() {
   const [monthPhotos, setMonthPhotos] = useState([]);
   const [monthPhotosBusy, setMonthPhotosBusy] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
-  const [photoViewerAdminMode, setPhotoViewerAdminMode] = useState(false);
   const [photoViewer, setPhotoViewer] = useState({ rotation: 0, scale: 1, x: 0, y: 0 });
   const photoDragRef = useRef({ active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 }); 
   const [pendingPhotoFiles, setPendingPhotoFiles] = useState([]);
@@ -1295,6 +1294,7 @@ export default function App() {
         await db.collection("monthPhotos").doc(key).collection("items").doc(photoId).set({
           name: item.file.name,
           dataUrl,
+          rotation: 0,
           uploadedAt: new Date(),
           ownerUid: firebaseUser?.uid || "",
         });
@@ -1319,20 +1319,51 @@ export default function App() {
 
   function resetPhotoViewer() {
     const savedRotation = Number(selectedPhoto?.rotation || 0);
+    setPhotoViewer({ rotation: savedRotation, scale: 1, x: 0, y: 0 });
+  }
+
+  function openSelectedPhoto(photo) {
+    setSelectedPhoto(photo);
+    const savedRotation = Number(photo?.rotation || 0);
     setPhotoViewer({ rotation: ((savedRotation % 360) + 360) % 360, scale: 1, x: 0, y: 0 });
   }
 
-  function openSelectedPhoto(photo, options = {}) {
-    const savedRotation = Number(photo?.rotation || 0);
-    setSelectedPhoto(photo);
-    setPhotoViewerAdminMode(Boolean(options.adminMode));
-    setPhotoViewer({ rotation: ((savedRotation % 360) + 360) % 360, scale: 1, x: 0, y: 0 });
+  async function saveSelectedPhotoRotation() {
+    if (!isAdmin || !selectedPhoto?.id) return;
+
+    const rotation = ((Number(photoViewer.rotation || 0) % 360) + 360) % 360;
+    setMonthPhotoAdminBusy(true);
+    setMonthDataMessage("");
+
+    try {
+      const { db } = getFirebaseServices();
+      const photoRef = db.collection("monthPhotos")
+        .doc(getMonthKey(year, month))
+        .collection("items")
+        .doc(selectedPhoto.id);
+
+      await photoRef.update({
+        rotation,
+        rotationUpdatedAt: new Date(),
+        rotationUpdatedBy: firebaseUser?.uid || "",
+      });
+
+      setSelectedPhoto((current) => current ? { ...current, rotation } : current);
+      setMonthPhotos((current) => current.map((photo) =>
+        photo.id === selectedPhoto.id ? { ...photo, rotation } : photo
+      ));
+      setMonthDataMessage(rotation ? `照片方向已儲存（${rotation}°）。` : "照片方向已恢復原始方向。");
+    } catch (error) {
+      console.error("儲存照片旋轉失敗：", error);
+      setMonthDataMessage(error?.message || "儲存照片方向失敗。");
+    } finally {
+      setMonthPhotoAdminBusy(false);
+    }
   }
 
   function closeSelectedPhoto() {
     setSelectedPhoto(null);
-    setPhotoViewerAdminMode(false);
-    setPhotoViewer({ rotation: 0, scale: 1, x: 0, y: 0 });
+    resetPhotoViewer();
     photoDragRef.current = { active: false, pointerId: null, startX: 0, startY: 0, originX: 0, originY: 0 };
   }
 
@@ -1341,34 +1372,6 @@ export default function App() {
       ...current,
       rotation: (current.rotation + direction * 90 + 360) % 360,
     }));
-  }
-
-  async function saveSelectedPhotoRotation() {
-    if (!selectedPhoto?.id || !photoViewerAdminMode || !isAdmin) return;
-
-    setMonthPhotoAdminBusy(true);
-    setMonthDataMessage("");
-    try {
-      const { db } = getFirebaseServices();
-      const rotation = ((Number(photoViewer.rotation || 0) % 360) + 360) % 360;
-      const key = getMonthKey(year, month);
-
-      await db.collection("monthPhotos")
-        .doc(key)
-        .collection("items")
-        .doc(selectedPhoto.id)
-        .set({ rotation, updatedAt: new Date() }, { merge: true });
-
-      const updatedPhoto = { ...selectedPhoto, rotation };
-      setSelectedPhoto(updatedPhoto);
-      setMonthPhotos((current) => current.map((photo) => photo.id === selectedPhoto.id ? updatedPhoto : photo));
-      setMonthDataMessage("照片方向已儲存。");
-    } catch (error) {
-      console.error("儲存照片旋轉失敗：", error);
-      setMonthDataMessage(error?.message || "照片旋轉儲存失敗。");
-    } finally {
-      setMonthPhotoAdminBusy(false);
-    }
   }
 
   function zoomSelectedPhoto(delta) {
@@ -1442,6 +1445,7 @@ export default function App() {
   async function openLoadLeave() {
     setLoadLeaveError("");
     setLoadLeaveItems([]);
+    setLoadLeaveUpdatedAt(null);
     setShowLoadLeave(true);
 
     if (!firebaseUser) {
@@ -1529,7 +1533,8 @@ export default function App() {
       const next = { ...customEvents };
       const deletedNext = new Set(deletedCustomEventDates);
 
-      // 先移除上一次由 Excel 載入的內容，避免重新載入後留下舊標記。
+      // 整批取代目前使用者、目前月份上一批 Excel 載入資料。
+      // 只清除這個月份曾由 Excel 載入的日期，不碰其他月份或其他使用者。
       previousImported.forEach((item) => {
         const oldDay = Number(item?.day);
         if (!oldDay) return;
@@ -1537,6 +1542,16 @@ export default function App() {
         if (next[oldKey]) {
           delete next[oldKey];
           deletedNext.add(oldKey);
+        }
+      });
+
+      // 相容較早版本：如果沒有保存上一批 Excel 日期清單，
+      // 仍清除目前月份中明確標記為「休」的舊休假，避免殘留。
+      Object.keys(next).forEach((eventKey) => {
+        if (!eventKey.startsWith(`${year}-${pad(month + 1)}-`)) return;
+        if (isLeaveText(next[eventKey])) {
+          delete next[eventKey];
+          deletedNext.add(eventKey);
         }
       });
 
@@ -2207,7 +2222,7 @@ export default function App() {
                 <h2>{shiftUser?.name ? `${shiftUser.name} ` : ""}{year}年{month + 1}月份休假</h2>
                 <p>從本月份的出勤資料讀取你的休假</p>
                 {loadLeaveUpdatedAt && (
-                  <small className="month-load-updated-at">資料更新時間：{formatMonthDataTime(loadLeaveUpdatedAt)}</small>
+                  <p className="month-load-updated-at">資料更新時間：{formatMonthDataTime(loadLeaveUpdatedAt)}</p>
                 )}
               </div>
               <button className="shift-menu-close" type="button" onClick={closeLoadLeave}>×</button>
@@ -2318,7 +2333,7 @@ export default function App() {
               <button type="button" onClick={() => zoomSelectedPhoto(0.25)} aria-label="放大">＋</button>
               <button type="button" onClick={() => rotateSelectedPhoto(1)} aria-label="向右旋轉">↷</button>
               <button type="button" className="photo-direct-reset" onClick={resetPhotoViewer}>重設</button>
-              {photoViewerAdminMode && isAdmin && (
+              {isAdmin && (
                 <button
                   type="button"
                   className="photo-direct-save"
@@ -2625,7 +2640,7 @@ export default function App() {
                     <div className="admin-photo-grid">
                       {monthPhotos.map((photo) => (
                         <div className="admin-photo-item" key={photo.id}>
-                          <button type="button" onClick={() => openSelectedPhoto(photo, { adminMode: true })} className="admin-photo-preview">
+                          <button type="button" onClick={() => openSelectedPhoto(photo)} className="admin-photo-preview">
                             <img src={photo.dataUrl || photo.url} alt={photo.name || "出勤表照片"} />
                           </button>
                           <button type="button" className="danger-button admin-photo-delete" disabled={monthPhotoAdminBusy} onClick={() => removeMonthPhoto(photo)}>

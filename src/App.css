@@ -2643,6 +2643,13 @@ input {
   font-weight: 700;
 }
 
+.month-load-updated-at {
+  margin: 6px 0 0 !important;
+  color: #7b8798 !important;
+  font-size: 12px !important;
+  font-weight: 700;
+}
+
 .month-load-error {
   margin: 16px 0;
   padding: 12px 14px;
@@ -3015,11 +3022,12 @@ input {
 
 
 /* =========================
-   休假載入：整個視窗一起捲動＋手機 3 欄
+   休假載入：整個視窗一起捲動（手錶／手機）
    ========================= */
 .month-load-modal {
-  max-height: calc(100vh - 16px);
+  max-height: calc(100vh - 28px);
   overflow-y: auto;
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: #b8c5d6 transparent;
 }
@@ -3027,6 +3035,7 @@ input {
 .month-load-sections {
   max-height: none;
   overflow: visible;
+  padding-right: 0;
 }
 
 .month-load-days {
@@ -3040,18 +3049,14 @@ input {
   min-width: 0;
 }
 
-.month-load-updated-at {
-  display: block;
-  margin-top: 7px;
-  color: #7a879a;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 @media (max-width: 700px) {
   .month-load-modal {
     width: min(560px, calc(100vw - 16px));
-    max-height: calc(100vh - 10px);
+  }
+
+  .month-load-sections {
+    max-height: none;
+    overflow: visible;
   }
 
   .month-load-days {
@@ -3133,22 +3138,6 @@ input {
 
 .photo-direct-toolbar .photo-direct-reset {
   color: #287be8;
-}
-
-.photo-direct-toolbar .photo-direct-save {
-  min-width: 78px;
-  background: #287be8;
-  border-color: #287be8;
-  color: #fff;
-}
-
-.photo-direct-toolbar .photo-direct-save:hover {
-  background: #1f6ed4;
-}
-
-.photo-direct-toolbar .photo-direct-save:disabled {
-  opacity: 0.65;
-  cursor: wait;
 }
 
 .photo-direct-canvas {
@@ -3310,4 +3299,19 @@ input {
     top: max(12px, env(safe-area-inset-top, 0px));
     right: 12px;
   }
+}
+
+/* 儲存照片旋轉按鈕 */
+.photo-direct-save {
+  border: 1px solid #2f7de1;
+  background: #eaf3ff;
+  color: #2469c8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 700;
+}
+
+.photo-direct-save:disabled {
+  opacity: .6;
+  cursor: not-allowed;
 }
