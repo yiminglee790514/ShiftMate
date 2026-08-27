@@ -566,6 +566,11 @@ export default function App() {
   const [loadLeaveBusy, setLoadLeaveBusy] = useState(false);
   const [loadLeaveError, setLoadLeaveError] = useState("");
   const [loadLeaveUpdatedAt, setLoadLeaveUpdatedAt] = useState(null);
+  // 依月份記錄使用者最後一次點開載入休假的時間，用於更新提示。
+  const [leaveNoticeSeenAtByMonth, setLeaveNoticeSeenAtByMonth] = useState({});
+  const [photoNoticeSeenAtByMonth, setPhotoNoticeSeenAtByMonth] = useState({});
+  const [currentMonthAttendanceUploadedAt, setCurrentMonthAttendanceUploadedAt] = useState(null);
+  const [currentMonthPhotoUploadedAt, setCurrentMonthPhotoUploadedAt] = useState(null);
 
   const [showMonthPhotos, setShowMonthPhotos] = useState(false);
   const [monthPhotos, setMonthPhotos] = useState([]);
@@ -594,6 +599,10 @@ export default function App() {
           setShiftUser(null);
           setCustomEvents({});
           setExcelLeaveDataByMonth({});
+          setLeaveNoticeSeenAtByMonth({});
+          setPhotoNoticeSeenAtByMonth({});
+          setCurrentMonthAttendanceUploadedAt(null);
+          setCurrentMonthPhotoUploadedAt(null);
           setGlobalEvents({});
           setHolidayOverrides({});
           setCustomEventsLoaded(true);
@@ -688,6 +697,16 @@ export default function App() {
                     ])
                   )
                 : {})
+          );
+          setLeaveNoticeSeenAtByMonth(
+            calendarData?.leaveNoticeSeenAtByMonth && typeof calendarData.leaveNoticeSeenAtByMonth === "object"
+              ? calendarData.leaveNoticeSeenAtByMonth
+              : {}
+          );
+          setPhotoNoticeSeenAtByMonth(
+            calendarData?.photoNoticeSeenAtByMonth && typeof calendarData.photoNoticeSeenAtByMonth === "object"
+              ? calendarData.photoNoticeSeenAtByMonth
+              : {}
           );
           setCustomEventsLoaded(true);
           setAuthReady(true);
@@ -1158,6 +1177,9 @@ export default function App() {
       const snapshot = await db.collection("monthPhotos").doc(key).collection("items").orderBy("uploadedAt", "desc").get();
       const photos = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setMonthPhotos(photos);
+      if (targetYear === year && targetMonth === month) {
+        setCurrentMonthPhotoUploadedAt(photos[0]?.uploadedAt || null);
+      }
       return photos;
     } catch (error) {
       console.error("讀取月份照片失敗：", error);
@@ -1167,6 +1189,8 @@ export default function App() {
   }
 
   async function openMonthPhotos() {
+    // 一點開「出勤表照片」就視為使用者已看到更新提示。
+    markPhotoNoticeSeen();
     setSelectedPhoto(null);
     setShowMonthPhotos(true);
     setMonthPhotosBusy(true);
@@ -1442,7 +1466,95 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentMonthAttendanceNotice() {
+      if (!firebaseUser) {
+        setCurrentMonthAttendanceUploadedAt(null);
+        return;
+      }
+      try {
+        const { db } = getFirebaseServices();
+        const key = getMonthKey(year, month);
+        const doc = await db.collection("attendanceMonths").doc(key).get();
+        if (cancelled) return;
+        setCurrentMonthAttendanceUploadedAt(doc.exists ? (doc.data()?.uploadedAt || null) : null);
+
+        // 出勤表照片的更新提示以本月份最新一張照片的 uploadedAt 判斷。
+        const photoSnapshot = await db.collection("monthPhotos").doc(key).collection("items")
+          .orderBy("uploadedAt", "desc").limit(1).get();
+        if (cancelled) return;
+        setCurrentMonthPhotoUploadedAt(
+          photoSnapshot.empty ? null : (photoSnapshot.docs[0].data()?.uploadedAt || null)
+        );
+      } catch (error) {
+        if (!cancelled) {
+          setCurrentMonthAttendanceUploadedAt(null);
+          setCurrentMonthPhotoUploadedAt(null);
+        }
+        console.error("讀取月份更新提示失敗：", error);
+      }
+    }
+
+    loadCurrentMonthAttendanceNotice();
+    return () => { cancelled = true; };
+  }, [firebaseUser, year, month]);
+
+  const currentMonthKey = getMonthKey(year, month);
+  const currentMonthNoticeMillis = currentMonthAttendanceUploadedAt
+    ? new Date(currentMonthAttendanceUploadedAt?.toDate ? currentMonthAttendanceUploadedAt.toDate() : currentMonthAttendanceUploadedAt).getTime()
+    : 0;
+  const currentMonthSeenMillis = leaveNoticeSeenAtByMonth?.[currentMonthKey]
+    ? new Date(leaveNoticeSeenAtByMonth[currentMonthKey]).getTime()
+    : 0;
+  const showLeaveUpdateBadge = Boolean(
+    currentMonthNoticeMillis && (!currentMonthSeenMillis || currentMonthNoticeMillis > currentMonthSeenMillis)
+  );
+
+  const currentMonthPhotoNoticeMillis = currentMonthPhotoUploadedAt
+    ? new Date(currentMonthPhotoUploadedAt?.toDate ? currentMonthPhotoUploadedAt.toDate() : currentMonthPhotoUploadedAt).getTime()
+    : 0;
+  const currentMonthPhotoSeenMillis = photoNoticeSeenAtByMonth?.[currentMonthKey]
+    ? new Date(photoNoticeSeenAtByMonth[currentMonthKey]).getTime()
+    : 0;
+  const showPhotoUpdateBadge = Boolean(
+    currentMonthPhotoNoticeMillis && (!currentMonthPhotoSeenMillis || currentMonthPhotoNoticeMillis > currentMonthPhotoSeenMillis)
+  );
+
+  async function markLeaveNoticeSeen() {
+    if (!firebaseUser) return;
+    const seenAt = new Date().toISOString();
+    const next = { ...leaveNoticeSeenAtByMonth, [currentMonthKey]: seenAt };
+    setLeaveNoticeSeenAtByMonth(next);
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("users").doc(firebaseUser.uid).set({
+        leaveNoticeSeenAtByMonth: next,
+      }, { merge: true });
+    } catch (error) {
+      console.error("儲存休假更新提示狀態失敗：", error);
+    }
+  }
+
+  async function markPhotoNoticeSeen() {
+    if (!firebaseUser) return;
+    const seenAt = new Date().toISOString();
+    const next = { ...photoNoticeSeenAtByMonth, [currentMonthKey]: seenAt };
+    setPhotoNoticeSeenAtByMonth(next);
+    try {
+      const { db } = getFirebaseServices();
+      await db.collection("users").doc(firebaseUser.uid).set({
+        photoNoticeSeenAtByMonth: next,
+      }, { merge: true });
+    } catch (error) {
+      console.error("儲存出勤表照片更新提示狀態失敗：", error);
+    }
+  }
+
   async function openLoadLeave() {
+    // 一點開「載入休假」就視為使用者已看到更新提示。
+    markLeaveNoticeSeen();
     setLoadLeaveError("");
     setLoadLeaveItems([]);
     setLoadLeaveUpdatedAt(null);
@@ -2102,9 +2214,11 @@ export default function App() {
 
           <div className="calendar-import-actions">
             <button className="calendar-import-button leave-import-button" type="button" onClick={openLoadLeave}>
+              {showLeaveUpdateBadge && <span className="leave-update-badge" aria-label="休假資料已更新">!</span>}
               載入休假
             </button>
             <button className="calendar-import-button photo-view-button" type="button" onClick={openMonthPhotos}>
+              {showPhotoUpdateBadge && <span className="photo-update-badge" aria-label="出勤表照片已更新">!</span>}
               出勤表照片
             </button>
           </div>
