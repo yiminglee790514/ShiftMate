@@ -3344,11 +3344,12 @@ input {
   .photo-update-badge { top: 5px; right: 7px; width: 18px; height: 18px; font-size: 12px; }
 }
 
-/* Language switch */
+/* Language switch：手機版與「管理／登出」採用同樣的精簡尺寸，避免三個按鈕放不下 */
 .language-button {
-  min-width: 86px;
+  min-width: 70px;
+  width: auto;
   height: 43px;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 1.5px solid #4389ef;
   border-radius: 10px;
   background: #fff;
@@ -3357,8 +3358,93 @@ input {
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .language-button:hover { background: #f4f8ff; }
+
+/* 只統一按鈕的置中方式，不強制把語言按鈕放大 */
+.header-actions > .language-button,
+.header-actions > .admin-button,
+.header-actions > .login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 @media (max-width: 700px) {
-  .language-button { min-width: 76px; height: 36px; padding: 0 8px; border-radius: 9px; font-size: 13px; }
+  .language-button {
+    min-width: 58px;
+    width: auto;
+    height: 36px;
+    padding: 0 6px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
+}
+
+/* 手機版右上角：語言／管理／登出三個按鈕完全同尺寸 */
+@media (max-width: 700px) {
+  .header-actions > .language-button,
+  .header-actions > .admin-button,
+  .header-actions > .login-button {
+    width: 70px;
+    min-width: 70px;
+    max-width: 70px;
+    height: 36px;
+    padding: 0;
+    box-sizing: border-box;
+    flex: 0 0 70px;
+    border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .header-actions > .language-button,
+  .header-actions > .admin-button {
+    font-size: 13px;
+  }
+
+  .header-actions > .login-button {
+    font-size: 13px;
+  }
+}
+
+/* ===== Header action buttons: same size on desktop and mobile ===== */
+.header-actions > .language-button,
+.header-actions > .admin-button,
+.header-actions > .login-button {
+  width: 90px;
+  min-width: 90px;
+  max-width: 90px;
+  height: 43px;
+  min-height: 43px;
+  padding: 0;
+  box-sizing: border-box;
+  flex: 0 0 90px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+@media (max-width: 700px) {
+  .header-actions > .language-button,
+  .header-actions > .admin-button,
+  .header-actions > .login-button {
+    width: 70px;
+    min-width: 70px;
+    max-width: 70px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    flex: 0 0 70px;
+    border-radius: 9px;
+    font-size: 13px;
+  }
 }
