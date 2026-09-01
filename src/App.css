@@ -3448,3 +3448,70 @@ input {
     font-size: 13px;
   }
 }
+
+/* ===== 修正手機版 Header：三個按鈕同尺寸，但不擠壓標題 ===== */
+@media (max-width: 700px) {
+  .top-header {
+    width: calc(100% - 16px);
+    min-height: 60px;
+    padding: 7px 8px;
+    gap: 6px;
+  }
+
+  .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 7px;
+    overflow: hidden;
+  }
+
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+  }
+
+  .brand h1 {
+    min-width: 0;
+    margin: 0;
+    font-size: 18px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
+    gap: 4px;
+  }
+
+  .header-actions > .language-button,
+  .header-actions > .admin-button,
+  .header-actions > .login-button {
+    width: 56px;
+    min-width: 56px;
+    max-width: 56px;
+    height: 36px;
+    min-height: 36px;
+    flex: 0 0 56px;
+    padding: 0;
+    font-size: 13px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+}
+
+/* 更窄手機仍維持單行，三個按鈕不會把標題擠成兩行 */
+@media (max-width: 380px) {
+  .brand h1 { font-size: 17px; }
+  .header-actions > .language-button,
+  .header-actions > .admin-button,
+  .header-actions > .login-button {
+    width: 54px;
+    min-width: 54px;
+    max-width: 54px;
+    flex-basis: 54px;
+    font-size: 12px;
+  }
+}
