@@ -3343,3 +3343,22 @@ input {
   .leave-update-badge,
   .photo-update-badge { top: 5px; right: 7px; width: 18px; height: 18px; font-size: 12px; }
 }
+
+/* Language switch */
+.language-button {
+  min-width: 86px;
+  height: 43px;
+  padding: 0 12px;
+  border: 1.5px solid #4389ef;
+  border-radius: 10px;
+  background: #fff;
+  color: #1664d8;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.language-button:hover { background: #f4f8ff; }
+@media (max-width: 700px) {
+  .language-button { min-width: 76px; height: 36px; padding: 0 8px; border-radius: 9px; font-size: 13px; }
+}

@@ -490,8 +490,62 @@ function parseAttendanceWorkbook(arrayBuffer) {
   };
 }
 
+const EN_TEXT = {
+  "輪班行事曆": "ShiftMate",
+  "請輸入工號與密碼登入": "Enter your employee ID and password",
+  "工號": "Employee ID", "密碼": "Password", "登入": "Login", "登入中…": "Signing in…",
+  "登出": "Logout", "管理": "Manage", "管理者": "Administrator",
+  "班別": "Shift", "姓名": "Name", "本月統計": "Monthly Summary",
+  "正班": "Work", "休假日": "Day Off", "休息日": "Rest Day", "例假日": "Regular Holiday",
+  "人員、全員行程、國定假日": "People, shared events and holidays",
+  "人員管理": "People", "全員行程": "Shared Events", "國定假日": "Holidays", "月份資料": "Monthly Data",
+  "修改人員": "Edit Person", "新增人員": "Add Person", "取消編輯": "Cancel Edit",
+  "處理中…": "Processing…", "儲存修改": "Save Changes", "新增人員": "Add Person", "全部人員": "All People",
+  "編輯": "Edit", "停用": "Disable", "儲存": "Save", "刪除": "Delete",
+  "新增／修改全員行程": "Add / Edit Shared Event",
+  "系統會自動帶入國定假日；管理者可以修改日期／名稱，或暫時停用。": "System holidays are added automatically. Administrators can change dates/names or temporarily disable them.",
+  "登入輪班行事曆": "Login to ShiftMate", "使用工號＋密碼登入": "Sign in with your employee ID and password",
+  "例如 D7445": "e.g. D7445", "請輸入密碼": "Enter password", "尚未登入": "Not signed in",
+  "本月放假": "Monthly Leave", "載入休假": "Load Leave", "儲存": "Save", "取消": "Cancel",
+  "關閉照片": "Close photo", "出勤表照片": "Attendance photo",
+  "天": " days"
+};
+
+function translatePage(language) {
+  const dictionary = language === "en"
+    ? EN_TEXT
+    : Object.fromEntries(Object.entries(EN_TEXT).map(([zh, en]) => [en, zh]));
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    if (node.parentElement?.closest?.('[data-no-translate]')) return;
+    const raw = node.nodeValue;
+    const trimmed = raw.trim();
+    if (!trimmed || !dictionary[trimmed]) return;
+    const leading = raw.match(/^\s*/)?.[0] || "";
+    const trailing = raw.match(/\s*$/)?.[0] || "";
+    node.nodeValue = `${leading}${dictionary[trimmed]}${trailing}`;
+  });
+  document.querySelectorAll('[placeholder],[aria-label],[title]').forEach((el) => {
+    ['placeholder','aria-label','title'].forEach((attr) => {
+      const value = el.getAttribute(attr);
+      if (value && dictionary[value]) el.setAttribute(attr, dictionary[value]);
+    });
+  });
+}
+
 export default function App() {
   const today = new Date();
+  const [language, setLanguage] = useState(() => localStorage.getItem("shiftmate-language") || "zh");
+
+  useEffect(() => {
+    localStorage.setItem("shiftmate-language", language);
+    document.documentElement.lang = language === "en" ? "en" : "zh-Hant";
+    document.title = language === "en" ? "ShiftMate" : "輪班行事曆";
+    const timer = window.setTimeout(() => translatePage(language), 0);
+    return () => window.clearTimeout(timer);
+  }, [language]);
 
   async function copyMonthLeaveSummary() {
     const days = monthLeaveDays
@@ -2145,12 +2199,20 @@ export default function App() {
         </div>
 
         <div className="header-actions">
+          <button
+            className="language-button"
+            type="button"
+            onClick={() => setLanguage((current) => current === "zh" ? "en" : "zh")}
+            aria-label={language === "zh" ? "Switch to English" : "切換為中文"}
+          >
+            {language === "zh" ? "🌐 EN" : "🌐 中文"}
+          </button>
           {isAdmin && (
-            <button className="admin-button" type="button" onClick={openAdmin}>管理</button>
+            <button className="admin-button" type="button" onClick={openAdmin}>{language === "en" ? "Manage" : "管理"}</button>
           )}
           {firebaseUser ? (
             <button className="login-button" type="button" onClick={logoutFirebase}>
-              登出
+              {language === "en" ? "Logout" : "登出"}
             </button>
           ) : (
             <button className="login-button" type="button" onClick={openLoginMenu}>
@@ -2208,7 +2270,7 @@ export default function App() {
               type="button"
               onClick={goToday}
             >
-              今天
+              {language === "en" ? "Today" : "今天"}
             </button>
           </div>
 
@@ -2307,7 +2369,7 @@ export default function App() {
             {cells.map(renderCell)}
           </div>
 
-          <div className="calendar-statistics" aria-label="本月統計">
+          <div className="calendar-statistics" aria-label="本月統計" data-no-translate>
             <div className="calendar-stat-item work">
               <span>○</span><strong className="desktop-stat-label">正班 </strong><b>{monthStatistics.work}天</b>
             </div>
@@ -2333,16 +2395,18 @@ export default function App() {
           <div className="login-modal month-load-modal" onClick={(event) => event.stopPropagation()}>
             <div className="login-modal-header">
               <div>
-                <h2>{shiftUser?.name ? `${shiftUser.name} ` : ""}{year}年{month + 1}月份休假</h2>
-                <p>從本月份的出勤資料讀取你的休假</p>
+                <h2>{language === "en"
+                  ? `${shiftUser?.name ? `${shiftUser.name} ` : ""}${year}/${month + 1} Leave`
+                  : <>{shiftUser?.name ? `${shiftUser.name} ` : ""}{year}年{month + 1}月份休假</>}</h2>
+                <p>{language === "en" ? "Read your leave from this month's attendance data" : "從本月份的出勤資料讀取你的休假"}</p>
                 {loadLeaveUpdatedAt && (
-                  <p className="month-load-updated-at">資料更新時間：{formatMonthDataTime(loadLeaveUpdatedAt)}</p>
+                  <p className="month-load-updated-at">{language === "en" ? "Last updated: " : "資料更新時間："}{formatMonthDataTime(loadLeaveUpdatedAt)}</p>
                 )}
               </div>
               <button className="shift-menu-close" type="button" onClick={closeLoadLeave}>×</button>
             </div>
 
-            {loadLeaveBusy && <div className="month-load-status">讀取中…</div>}
+            {loadLeaveBusy && <div className="month-load-status">{language === "en" ? "Loading…" : "讀取中…"}</div>}
             {!loadLeaveBusy && loadLeaveError && (
               <div className="month-load-error">{loadLeaveError}</div>
             )}
@@ -2353,7 +2417,7 @@ export default function App() {
                   const specialItems = loadLeaveItems.filter((item) => (item.texts || []).some((text) => text !== "休"));
                   const renderItems = (items, kind) => items.length ? items.map((item) => (
                     <div className={`month-load-item ${kind === "leave" ? "month-load-item-leave" : "month-load-item-special"}`} key={`${kind}-${item.day}`}>
-                      <span className="month-load-day">{item.day}號</span>
+                      <span className="month-load-day">{language === "en" ? item.day : `${item.day}號`}</span>
                       <span className="month-load-item-text">
                         {(item.texts || []).filter((text) => kind === "leave" ? text === "休" : text !== "休").map((text, index) => (
                           <span
@@ -2365,24 +2429,24 @@ export default function App() {
                         ))}
                       </span>
                     </div>
-                  )) : <span className="month-load-empty">沒有資料</span>;
+                  )) : <span className="month-load-empty">{language === "en" ? "No data" : "沒有資料"}</span>;
 
                   return (
                     <div className="month-load-sections">
                       <section className="month-load-section month-load-section-leave">
-                        <h3>休假</h3>
+                        <h3>{language === "en" ? "Leave" : "休假"}</h3>
                         <div className="month-load-days">{renderItems(leaveItems, "leave")}</div>
                       </section>
                       <section className="month-load-section month-load-section-special">
-                        <h3>其他</h3>
+                        <h3>{language === "en" ? "Other" : "其他"}</h3>
                         <div className="month-load-days">{renderItems(specialItems, "special")}</div>
                       </section>
                     </div>
                   );
                 })()}
                 <div className="modal-buttons">
-                  <button className="cancel-button" type="button" onClick={closeLoadLeave}>取消</button>
-                  <button className="save-button" type="button" onClick={requestLoadLeaveConfirm} disabled={!loadLeaveItems.length}>載入</button>
+                  <button className="cancel-button" type="button" onClick={closeLoadLeave}>{language === "en" ? "Cancel" : "取消"}</button>
+                  <button className="save-button" type="button" onClick={requestLoadLeaveConfirm} disabled={!loadLeaveItems.length}>{language === "en" ? "Load" : "載入"}</button>
                 </div>
               </>
             )}
@@ -2395,14 +2459,14 @@ export default function App() {
           <div className="login-modal confirm-load-modal" onClick={(event) => event.stopPropagation()}>
             <div className="login-modal-header">
               <div>
-                <h2>確認載入</h2>
-                <p>確定要載入 {year}年{month + 1}月的休假嗎？</p>
+                <h2>{language === "en" ? "Confirm Load" : "確認載入"}</h2>
+                <p>{language === "en" ? `Load leave for ${year}/${month + 1}?` : <>確定要載入 {year}年{month + 1}月的休假嗎？</>}</p>
               </div>
             </div>
             <div className="modal-buttons">
-              <button className="cancel-button" type="button" onClick={() => setShowLoadLeaveConfirm(false)} disabled={loadLeaveBusy}>取消</button>
+              <button className="cancel-button" type="button" onClick={() => setShowLoadLeaveConfirm(false)} disabled={loadLeaveBusy}>{language === "en" ? "Cancel" : "取消"}</button>
               <button className="save-button" type="button" onClick={confirmLoadLeave} disabled={loadLeaveBusy}>
-                {loadLeaveBusy ? "載入中…" : "確定載入"}
+                {loadLeaveBusy ? (language === "en" ? "Loading…" : "載入中…") : (language === "en" ? "Confirm Load" : "確定載入")}
               </button>
             </div>
           </div>
@@ -2414,8 +2478,8 @@ export default function App() {
           <div className="login-modal month-photos-modal" onClick={(event) => event.stopPropagation()}>
             <div className="login-modal-header">
               <div>
-                <h2>{year}年{month + 1}月出勤表照片</h2>
-                <p>管理者上傳的本月份照片</p>
+                <h2>{language === "en" ? `${year}/${month + 1} Attendance Photos` : `${year}年${month + 1}月出勤表照片`}</h2>
+                <p>{language === "en" ? "Photos uploaded by the administrator for this month" : "管理者上傳的本月份照片"}</p>
               </div>
               <button className="shift-menu-close" type="button" onClick={() => setShowMonthPhotos(false)}>×</button>
             </div>
@@ -2897,9 +2961,11 @@ export default function App() {
       {showLeavePicker && (
         <div className="modal-backdrop" onClick={() => setShowLeavePicker(false)}>
           <div className="leave-modal" onClick={(event) => event.stopPropagation()}>
-            <h2>輸入本月放假日期</h2>
+            <h2>{language === "en" ? "Select Leave Dates for This Month" : "輸入本月放假日期"}</h2>
             <p className="modal-description">
-              點選這個月要放假的日期。可以選黃色、藍色，甚至正班日；儲存後都會顯示紅色「休」。
+              {language === "en"
+                ? "Select the dates you want to take off this month. You can select yellow, blue, or even work days; after saving, they will be marked in red with 「休」。"
+                : "點選這個月要放假的日期。可以選黃色、藍色，甚至正班日；儲存後都會顯示紅色「休」。"}
             </p>
 
             <div className="leave-day-grid">
@@ -2928,12 +2994,14 @@ export default function App() {
               onClick={copySelectedLeaveSummary}
               aria-label="複製本月放假日期"
             >
-              {month + 1}月放假{selectedLeaveDays.length ? selectedLeaveDays.join("、") : "無"}
+              {language === "en"
+                ? `${month + 1} Leave: ${selectedLeaveDays.length ? selectedLeaveDays.join(", ") : "None"}`
+                : `${month + 1}月放假${selectedLeaveDays.length ? selectedLeaveDays.join("、") : "無"}`}
             </button>
 
             <div className="modal-buttons">
-              <button className="cancel-button" onClick={() => setShowLeavePicker(false)} type="button">取消</button>
-              <button className="save-button" onClick={saveLeaveDays} type="button">儲存本月休假</button>
+              <button className="cancel-button" onClick={() => setShowLeavePicker(false)} type="button">{language === "en" ? "Cancel" : "取消"}</button>
+              <button className="save-button" onClick={saveLeaveDays} type="button">{language === "en" ? "Save This Month's Leave" : "儲存本月休假"}</button>
             </div>
           </div>
         </div>
