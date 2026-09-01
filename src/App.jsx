@@ -490,51 +490,6 @@ function parseAttendanceWorkbook(arrayBuffer) {
   };
 }
 
-const EN_TEXT = {
-  "輪班行事曆": "ShiftMate",
-  "請輸入工號與密碼登入": "Enter your employee ID and password",
-  "工號": "Employee ID", "密碼": "Password", "登入": "Login", "登入中…": "Signing in…",
-  "登出": "Logout", "管理": "Manage", "管理者": "Administrator",
-  "班別": "Shift", "姓名": "Name", "本月統計": "Monthly Summary",
-  "正班": "Work", "休假日": "Day Off", "休息日": "Rest Day", "例假日": "Regular Holiday",
-  "人員、全員行程、國定假日": "People, shared events and holidays",
-  "人員管理": "People", "全員行程": "Shared Events", "國定假日": "Holidays", "月份資料": "Monthly Data",
-  "修改人員": "Edit Person", "新增人員": "Add Person", "取消編輯": "Cancel Edit",
-  "處理中…": "Processing…", "儲存修改": "Save Changes", "新增人員": "Add Person", "全部人員": "All People",
-  "編輯": "Edit", "停用": "Disable", "儲存": "Save", "刪除": "Delete",
-  "新增／修改全員行程": "Add / Edit Shared Event",
-  "系統會自動帶入國定假日；管理者可以修改日期／名稱，或暫時停用。": "System holidays are added automatically. Administrators can change dates/names or temporarily disable them.",
-  "登入輪班行事曆": "Login to ShiftMate", "使用工號＋密碼登入": "Sign in with your employee ID and password",
-  "例如 D7445": "e.g. D7445", "請輸入密碼": "Enter password", "尚未登入": "Not signed in",
-  "本月放假": "Monthly Leave", "載入休假": "Load Leave", "儲存": "Save", "取消": "Cancel",
-  "關閉照片": "Close photo", "出勤表照片": "Attendance photo",
-  "天": " days"
-};
-
-function translatePage(language) {
-  const dictionary = language === "en"
-    ? EN_TEXT
-    : Object.fromEntries(Object.entries(EN_TEXT).map(([zh, en]) => [en, zh]));
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  nodes.forEach((node) => {
-    if (node.parentElement?.closest?.('[data-no-translate]')) return;
-    const raw = node.nodeValue;
-    const trimmed = raw.trim();
-    if (!trimmed || !dictionary[trimmed]) return;
-    const leading = raw.match(/^\s*/)?.[0] || "";
-    const trailing = raw.match(/\s*$/)?.[0] || "";
-    node.nodeValue = `${leading}${dictionary[trimmed]}${trailing}`;
-  });
-  document.querySelectorAll('[placeholder],[aria-label],[title]').forEach((el) => {
-    ['placeholder','aria-label','title'].forEach((attr) => {
-      const value = el.getAttribute(attr);
-      if (value && dictionary[value]) el.setAttribute(attr, dictionary[value]);
-    });
-  });
-}
-
 export default function App() {
   const today = new Date();
   const [language, setLanguage] = useState(() => localStorage.getItem("shiftmate-language") || "zh");
@@ -543,8 +498,6 @@ export default function App() {
     localStorage.setItem("shiftmate-language", language);
     document.documentElement.lang = language === "en" ? "en" : "zh-Hant";
     document.title = language === "en" ? "ShiftMate" : "輪班行事曆";
-    const timer = window.setTimeout(() => translatePage(language), 0);
-    return () => window.clearTimeout(timer);
   }, [language]);
 
   async function copyMonthLeaveSummary() {
@@ -2155,7 +2108,7 @@ export default function App() {
       <div className="login-page">
         <div className="login-card">
           <div className="brand-icon" aria-hidden="true">▦</div>
-          <h1>輪班行事曆</h1>
+          <h1>{language === "en" ? "ShiftMate" : "輪班行事曆"}</h1>
           <p>請輸入工號與密碼登入</p>
           <form className="employee-login-form" onSubmit={(event) => { event.preventDefault(); if (!loginBusy) loginWithEmployee(); }}>
             <label>
@@ -2195,7 +2148,7 @@ export default function App() {
       <header className="top-header">
         <div className="brand">
           <div className="brand-icon" aria-hidden="true">▦</div>
-          <h1>輪班行事曆</h1>
+          <h1>{language === "en" ? "ShiftMate" : "輪班行事曆"}</h1>
         </div>
 
         <div className="header-actions">
@@ -2216,7 +2169,7 @@ export default function App() {
             </button>
           ) : (
             <button className="login-button" type="button" onClick={openLoginMenu}>
-              登入
+              {language === "en" ? "Login" : "登入"}
             </button>
           )}
         </div>
@@ -2227,7 +2180,7 @@ export default function App() {
           <div className="user-info shift-info">
             <span className="info-icon people-icon" aria-hidden="true">👥</span>
             <div className="info-copy">
-              <span className="info-title">班別</span>
+              <span className="info-title">{language === "en" ? "Shift" : "班別"}</span>
               {isAdmin ? (
                 <button className="shift-value" type="button" onClick={openShiftMenu}>
                   {shiftUser?.shift || shift}
@@ -2241,16 +2194,16 @@ export default function App() {
           <div className="user-info">
             <span className="info-icon badge-icon" aria-hidden="true">♙</span>
             <div className="info-copy">
-              <span className="info-title">工號</span>
-              <strong>{shiftUser?.employeeId || firebaseUser?.email?.split("@")[0]?.toUpperCase() || "尚未登入"}</strong>
+              <span className="info-title">{language === "en" ? "Employee ID" : "工號"}</span>
+              <strong>{shiftUser?.employeeId || firebaseUser?.email?.split("@")[0]?.toUpperCase() || (language === "en" ? "Not signed in" : "尚未登入")}</strong>
             </div>
           </div>
 
           <div className="user-info">
             <span className="info-icon person-icon" aria-hidden="true">♙</span>
             <div className="info-copy">
-              <span className="info-title">姓名</span>
-              <strong>{shiftUser?.name || "尚未登入"}</strong>
+              <span className="info-title">{language === "en" ? "Name" : "姓名"}</span>
+              <strong>{shiftUser?.name || (language === "en" ? "Not signed in" : "尚未登入")}</strong>
             </div>
           </div>
         </section>
@@ -2262,7 +2215,7 @@ export default function App() {
               onClick={openLeavePicker}
               type="button"
             >
-              本月放假
+              {language === "en" ? "Monthly Leave" : "本月放假"}
             </button>
 
             <button
@@ -2277,11 +2230,11 @@ export default function App() {
           <div className="calendar-import-actions">
             <button className="calendar-import-button leave-import-button" type="button" onClick={openLoadLeave}>
               {showLeaveUpdateBadge && <span className="leave-update-badge" aria-label="休假資料已更新">!</span>}
-              載入休假
+              {language === "en" ? "Load Leave" : "載入休假"}
             </button>
             <button className="calendar-import-button photo-view-button" type="button" onClick={openMonthPhotos}>
               {showPhotoUpdateBadge && <span className="photo-update-badge" aria-label="出勤表照片已更新">!</span>}
-              出勤表照片
+              {language === "en" ? "Attendance Photos" : "出勤表照片"}
             </button>
           </div>
 
@@ -2292,10 +2245,10 @@ export default function App() {
                 className="year-select"
                 value={year}
                 onChange={(event) => setYear(Number(event.target.value))}
-                aria-label="選擇年份"
+                aria-label={language === "en" ? "Select year" : "選擇年份"}
               >
                 {Array.from({ length: 31 }, (_, index) => 2010 + index).map((value) => (
-                  <option key={value} value={value}>{value} 年</option>
+                  <option key={value} value={value}>{language === "en" ? value : `${value} 年`}</option>
                 ))}
               </select>
             </label>
@@ -2306,17 +2259,17 @@ export default function App() {
                 className="month-select"
                 value={month}
                 onChange={(event) => setMonth(Number(event.target.value))}
-                aria-label="選擇月份"
+                aria-label={language === "en" ? "Select month" : "選擇月份"}
               >
                 {Array.from({ length: 12 }, (_, index) => (
-                  <option key={index} value={index}>{index + 1} 月</option>
+                  <option key={index} value={index}>{language === "en" ? index + 1 : `${index + 1} 月`}</option>
                 ))}
               </select>
             </label>
           </div>
 
           <div className="month-navigation">
-            <button className="month-arrow" onClick={goPreviousMonth} type="button" aria-label="上一個月">‹</button>
+            <button className="month-arrow" onClick={goPreviousMonth} type="button" aria-label={language === "en" ? "Previous month" : "上一個月"}>‹</button>
 
             <div className="month-title">
               <div className="mobile-month-selectors" aria-label="選擇年月">
@@ -2326,10 +2279,10 @@ export default function App() {
                     className="year-select"
                     value={year}
                     onChange={(event) => setYear(Number(event.target.value))}
-                    aria-label="選擇年份"
+                    aria-label={language === "en" ? "Select year" : "選擇年份"}
                   >
                     {Array.from({ length: 31 }, (_, index) => 2010 + index).map((value) => (
-                      <option key={value} value={value}>{value} 年</option>
+                      <option key={value} value={value}>{language === "en" ? value : `${value} 年`}</option>
                     ))}
                   </select>
                 </label>
@@ -2340,10 +2293,10 @@ export default function App() {
                     className="month-select"
                     value={month}
                     onChange={(event) => setMonth(Number(event.target.value))}
-                    aria-label="選擇月份"
+                    aria-label={language === "en" ? "Select month" : "選擇月份"}
                   >
                     {Array.from({ length: 12 }, (_, index) => (
-                      <option key={index} value={index}>{index + 1} 月</option>
+                      <option key={index} value={index}>{language === "en" ? index + 1 : `${index + 1} 月`}</option>
                     ))}
                   </select>
                 </label>
@@ -2356,11 +2309,11 @@ export default function App() {
               </span>
             </div>
 
-            <button className="month-arrow" onClick={goNextMonth} type="button" aria-label="下一個月">›</button>
+            <button className="month-arrow" onClick={goNextMonth} type="button" aria-label={language === "en" ? "Next month" : "下一個月"}>›</button>
           </div>
 
           <div className="weekdays">
-            {["日", "一", "二", "三", "四", "五", "六"].map((day) => (
+            {(language === "en" ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] : ["日", "一", "二", "三", "四", "五", "六"]).map((day) => (
               <div key={day}>{day}</div>
             ))}
           </div>
